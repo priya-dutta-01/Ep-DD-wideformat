@@ -4,13 +4,15 @@ import random
 import re
 import math
 import time
+import io
+import itertools
 from pathlib import Path
+from typing import Dict, List, Tuple, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import requests
 import pandas as pd
 from dotenv import load_dotenv
-import io
-from typing import Dict, List, Tuple, Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 # ============================================================
@@ -26,7 +28,7 @@ MAX_SCENARIO_REROLLS = 20
 MAX_FETCH_ATTEMPTS = 3
 
 # Parallelism (start conservative; bump if your Tableau Cloud allows it)
-DEFAULT_MAX_WORKERS = 8
+DEFAULT_MAX_WORKERS = 12
 
 # Value selection rule:
 # If True => for each randomly chosen filter, select >50% of its values (random k in [min_k..N])
@@ -53,8 +55,8 @@ class DashboardModule:
 
 
 class EpisodeDeepDiveModule(DashboardModule):
-    PERIOD_FIELD = "period"
-    PRODUCT_FIELD = "product_name"
+    PERIOD_FIELD = "period" #Can be moved to mapping excel
+    PRODUCT_FIELD = "product_name" #Needs to be changed for different instruments
     EPISODE_FIELD = "episode_name"
     QUESTION_FIELD = "txt_question_long_prefix (group)"
 
@@ -118,11 +120,63 @@ def normalize_view_name(sheet_name: str) -> str:
     return re.sub(r"[\s()]+", "", str(sheet_name)).strip()
 
 def smart_split_values(values_str: str) -> list[str]:
+    """
+    Split filter-values into list items while preserving commas inside numbers like $25,000.
+
+    Rules:
+      1) If we see delimiters like ", $..." (common for income ranges), split on comma+space before '$'
+      2) Otherwise split on commas that are NOT between digits (keeps 100,000 intact but splits 18-24, 25-34)
+    """
     s = "" if values_str is None else str(values_str).strip()
     if not s:
         return []
-    parts = re.split(r"(?<!\d),(?!\d)", s)
+
+    # Case 1: delimiters are ", " followed by "$"
+    if re.search(r",\s+\$", s):
+        parts = re.split(r",\s+(?=\$)", s)
+    else:
+        # Case 2: original behavior
+        parts = re.split(r"(?<!\d),(?!\d)", s)
+
     return [p.strip() for p in parts if p.strip()]
+
+
+def normalize_selected_values(vals: List[object]) -> List[object]:
+    """
+    Fix the exact issue you reported:
+      if a selected value itself contains comma-separated items (e.g. "18-24, 25-34, 35-44"),
+      expand it into multiple values so the WIDE explosion creates multiple rows.
+
+    Important: uses smart_split_values, so "$100,000" will NOT get split.
+    """
+    out: List[object] = []
+    for v in (vals or []):
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            continue
+
+        s = str(v).strip()
+        if not s or s.lower() == "nan":
+            continue
+
+        if "," in s:
+            parts = smart_split_values(s)
+            # If it actually split into multiple meaningful parts, expand; otherwise keep as-is
+            if len(parts) > 1:
+                out.extend(parts)
+            else:
+                out.append(s)
+        else:
+            out.append(s)
+
+    # De-dupe while preserving order
+    seen = set()
+    uniq: List[object] = []
+    for x in out:
+        if x not in seen:
+            seen.add(x)
+            uniq.append(x)
+
+    return uniq
 
 def format_filter_selection(selected_filters: dict[str, list[str]]) -> str:
     return "; ".join([f"{k}=[{'|'.join(map(str, v))}]" for k, v in selected_filters.items()])
@@ -136,12 +190,12 @@ def build_vf_params(selected_filters: dict[str, list[str]]) -> dict[str, str]:
 def safe_name(s: str) -> str:
     return re.sub(r"[^\w\-]+", "_", str(s)).strip("_")
 
-def make_local_rng(seed: Optional[int], dashboard: str, provider: str) -> random.Random:
+def make_local_rng(seed: Optional[int], dashboard: str) -> random.Random:
     """
-    Local RNG ensures scenario generation is deterministic and not impacted by parallel execution.
-    If seed is None, we still seed from dashboard+provider to keep internal consistency within a run.
+    Deterministic RNG per dashboard (NOT per provider) so scenarios are identical across providers.
+    If seed is None, we still randomize per run.
     """
-    base = f"{seed}|{dashboard}|{provider}" if seed is not None else f"{dashboard}|{provider}|{time.time_ns()}"
+    base = f"{seed}|{dashboard}" if seed is not None else f"{dashboard}|{time.time_ns()}"
     r = random.Random()
     r.seed(base)
     return r
@@ -254,20 +308,15 @@ def fetch_with_retry_same_filters(
     """
     Retry fetching the SAME vf params a few times (network flakiness).
     """
-    last_exc: Optional[Exception] = None
     for attempt in range(1, MAX_FETCH_ATTEMPTS + 1):
         try:
             vf_params = build_vf_params(final_filters)
             df = query_view_data_csv(server_url, token, site_id, view_id, vf_params, api_ver=api_ver)
             if df is not None and not df.empty:
                 return df, attempt, True
-            # empty is allowed; we may retry once or twice
-        except Exception as e:
-            last_exc = e
-            # small backoff
+        except Exception:
             time.sleep(0.25 * attempt)
 
-    # If we had a hard exception, surface it as "no data" but keep logs upstream
     return pd.DataFrame(), MAX_FETCH_ATTEMPTS, False
 
 
@@ -300,7 +349,6 @@ def load_deep_dive_combo_pool(xls: pd.ExcelFile) -> Dict[Tuple[str, str], List[s
         combo_pool.setdefault((product, question_long), []).append(episode)
 
     for k, eps in combo_pool.items():
-        # unique preserve first-seen order
         seen = set()
         out = []
         for e in eps:
@@ -347,10 +395,10 @@ def load_providers(xls: pd.ExcelFile) -> List[str]:
 
 
 # ============================================================
-# Scenario CSV (for Alteryx) in LONG format
+# Scenario CSV (for Alteryx) in WIDE-EXPLODED format
 # ============================================================
 
-def scenario_filters_to_long_rows(
+def scenario_filters_to_wide_exploded_rows(
     dashboard_name: str,
     provider: str,
     scen_num: int,
@@ -358,46 +406,69 @@ def scenario_filters_to_long_rows(
     reference_sheet: str,
     rerolls_used: int,
     final_filters: Dict[str, List[str]],
-) -> List[Dict[str, str]]:
-    rows: List[Dict[str, str]] = []
-    for field, vals in (final_filters or {}).items():
-        if not vals:
-            rows.append({
-                "scenario_id": scenario_id,
-                "dashboard_name": dashboard_name,
-                "provider": provider,
-                "scenario": str(scen_num),
-                "reference_sheet": reference_sheet,
-                "rerolls_used": str(rerolls_used),
-                "filter_name": str(field),
-                "filter_value": "",
-            })
+    all_filter_columns: List[str],
+    exclude_filter_columns: Optional[set[str]] = None,
+) -> List[Dict[str, object]]:
+    """
+    WIDE + EXPLODED:
+      - fixed metadata cols
+      - one col per filter in all_filter_columns
+      - cartesian explosion across multi-valued filters
+      - IMPORTANT FIX: if any selected value is itself a comma-separated string, expand it into multiple values
+        (e.g. "18-24, 25-34, 35-44" -> separate values -> separate exploded rows).
+    """
+    exclude_filter_columns = exclude_filter_columns or set()
+
+    per_filter_values: List[List[object]] = []
+    used_filter_cols: List[str] = []
+
+    for f in all_filter_columns:
+        if f in exclude_filter_columns:
+            continue
+
+        used_filter_cols.append(f)
+
+        raw_vals = (final_filters or {}).get(f, None)
+        if not raw_vals:
+            per_filter_values.append([pd.NA])
+            continue
+
+        # FIX: expand any comma-separated "csv-in-a-cell" values into separate values
+        expanded = normalize_selected_values(raw_vals)
+
+        if not expanded:
+            per_filter_values.append([pd.NA])
         else:
-            for v in vals:
-                rows.append({
-                    "scenario_id": scenario_id,
-                    "dashboard_name": dashboard_name,
-                    "provider": provider,
-                    "scenario": str(scen_num),
-                    "reference_sheet": reference_sheet,
-                    "rerolls_used": str(rerolls_used),
-                    "filter_name": str(field),
-                    "filter_value": "" if v is None else str(v),
-                })
+            per_filter_values.append(expanded)
+
+    rows: List[Dict[str, object]] = []
+    for combo in itertools.product(*per_filter_values):
+        row: Dict[str, object] = {
+            "scenario_id": scenario_id,
+            "dashboard_name": dashboard_name,
+            "provider": provider,
+            "scenario": int(scen_num),
+            "reference_sheet": reference_sheet,
+            "rerolls_used": int(rerolls_used),
+        }
+        for col, val in zip(used_filter_cols, combo):
+            row[col] = val
+        rows.append(row)
+
     return rows
 
 
 # ============================================================
-# Option 2: Reference-sheet gated scenario generation
+# Scenario generation ONCE per dashboard (same for all providers)
 # ============================================================
 
-def build_validated_scenarios_for_provider(
+def build_validated_scenarios_for_dashboard(
     server_url: str,
     token: str,
     site_id: str,
     reference_view_id: str,
     dashboard_name: str,
-    provider: str,
+    gating_provider: str,
     scenarios: int,
     filter_pool: Dict[str, List[str]],
     module: DashboardModule,
@@ -406,12 +477,10 @@ def build_validated_scenarios_for_provider(
     seed: Optional[int],
 ) -> Tuple[List[Dict[str, List[str]]], List[int]]:
     """
-    For each scenario number, reroll filter sets until the REFERENCE SHEET returns data (or max rerolls).
-    Returns:
-      - scenario_core_filters: list length == scenarios, each is a dict of filters (including provider pills if supported on ref)
-      - rerolls_used_list: list of rerolls used for each scenario
+    Generate ONE frozen list of scenarios per dashboard (same for all providers),
+    validated using a single gating_provider on the reference sheet.
     """
-    rng = make_local_rng(seed, dashboard_name, provider)
+    rng = make_local_rng(seed, dashboard_name)
 
     scenario_filters: List[Dict[str, List[str]]] = []
     rerolls_used_list: List[int] = []
@@ -428,11 +497,11 @@ def build_validated_scenarios_for_provider(
             final_filters.update(random_selected)
             final_filters.update(fixed_selected)
 
-            # Apply provider pills on the REFERENCE sheet only if it supports them (per your mapping rule)
+            # Apply provider pills ONLY for gating on reference sheet (single provider)
             if supports_survey_provider_on_ref and hasattr(module, "SURVEY_PROVIDER_FIELD"):
-                final_filters[module.SURVEY_PROVIDER_FIELD] = [provider]
+                final_filters[module.SURVEY_PROVIDER_FIELD] = [gating_provider]
             if supports_comparison_provider_on_ref and hasattr(module, "COMPARISON_PROVIDER_FIELD"):
-                final_filters[module.COMPARISON_PROVIDER_FIELD] = [provider]
+                final_filters[module.COMPARISON_PROVIDER_FIELD] = [gating_provider]
 
             last_filters = final_filters
 
@@ -446,9 +515,18 @@ def build_validated_scenarios_for_provider(
                 break
 
         if not got_data:
-            # accept the last one (even if empty) to keep alignment
             scenario_filters.append(last_filters)
             rerolls_used_list.append(MAX_SCENARIO_REROLLS)
+
+    # Strip provider pills from frozen base scenarios (so they are provider-agnostic)
+    if hasattr(module, "SURVEY_PROVIDER_FIELD"):
+        sp = module.SURVEY_PROVIDER_FIELD
+        for d in scenario_filters:
+            d.pop(sp, None)
+    if hasattr(module, "COMPARISON_PROVIDER_FIELD"):
+        cp = module.COMPARISON_PROVIDER_FIELD
+        for d in scenario_filters:
+            d.pop(cp, None)
 
     return scenario_filters, rerolls_used_list
 
@@ -525,11 +603,11 @@ def main():
 
     combo_pool = load_deep_dive_combo_pool(xls)
 
-    # Providers (100% for now. Can reduce later). If --seed is provided, this becomes repeatable.
     providers = load_providers(xls)
     if not providers:
         raise ValueError("No providers found in 'providers' sheet.")
 
+    # providers sample (100% currently)
     k = max(1, math.ceil(1 * len(providers)))
     sampler_rng = random.Random(args.seed) if args.seed is not None else random.Random()
     providers_sample = sampler_rng.sample(providers, k=k) if len(providers) > 1 else providers
@@ -537,17 +615,32 @@ def main():
     print(f"📌 Providers total={len(providers)} | sampled(100%)={len(providers_sample)}")
     print("📌 Sampled providers:", providers_sample)
 
-    # Global filter pool
+    # Global filter pool + universe of filter columns for wide scenario file
     global_filter_pool: Dict[str, List[str]] = {}
+    all_filter_columns_set: set[str] = set()
+
     for _, row in filters_df.iterrows():
         fname = str(row["filter name"]).strip()
-        vals = smart_split_values(row["filter values"])
+        vals_raw = row["filter values"]
+        vals = smart_split_values(vals_raw)
+
+        # Also handle cases where a cell might contain pipe-delimited values
+        # (common in some mapping files). If there is '|' we split that too.
+        if len(vals) == 1 and isinstance(vals_raw, str) and "|" in vals_raw:
+            vals = [p.strip() for p in str(vals_raw).split("|") if p.strip()]
+
         if fname and vals:
             global_filter_pool[fname] = vals
+            all_filter_columns_set.add(fname)
+
     if not global_filter_pool:
         raise ValueError("No filters found in filter_details.")
 
-    scenario_long_rows: List[Dict[str, str]] = []
+    # Exclude provider-pill filter columns (we already have 'provider' column)
+    exclude_filter_columns = {"survey_provider", "comparison_provider"}
+
+    # Accumulate WIDE exploded scenario rows for Alteryx
+    scenario_wide_rows: List[Dict[str, object]] = []
 
     token = None
     try:
@@ -567,12 +660,17 @@ def main():
             module = get_dashboard_module(dashboard_name, combo_pool=combo_pool)
             module.validate_ready()
 
+            # Add module fixed fields to wide output column universe
+            for attr in ["PERIOD_FIELD", "PRODUCT_FIELD", "EPISODE_FIELD", "QUESTION_FIELD"]:
+                if hasattr(module, attr):
+                    all_filter_columns_set.add(getattr(module, attr))
+
             # Remove special filters from random pool
             filter_pool = dict(global_filter_pool)
             for f in module.remove_from_random_pool():
                 filter_pool.pop(f, None)
 
-            # Build sheet -> colmap + provider pill support per sheet (inferred from mapping "column name")
+            # Build sheet -> colmap + provider pill support per sheet
             dash_sheet_colmap: Dict[str, Dict[str, str]] = {}
             sheet_supports: Dict[str, Dict[str, bool]] = {}
 
@@ -589,7 +687,7 @@ def main():
                     "comparison": ("comparison_provider" in col_names_lower),
                 }
 
-            # Pick a reference sheet: first sheet in mapping for this dashboard
+            # Pick a reference sheet
             reference_sheet = list(dash_sheet_colmap.keys())[0]
             ref_norm = normalize_view_name(reference_sheet)
             if ref_norm not in view_lookup:
@@ -606,32 +704,35 @@ def main():
             safe_dash = safe_name(dashboard_name)
             excel_out = out_dir / f"{safe_dash}.xlsx"
 
-            # We'll collect results per sheet, then write once
             results_by_sheet: Dict[str, List[pd.DataFrame]] = {s: [] for s in dash_sheet_colmap.keys()}
 
-            # ---- For each provider: build validated scenarios on reference sheet, then parallel fetch across all sheets
-            for provider in providers_sample:
-                # (A) Build validated scenarios for this provider (sequential gating)
-                scenario_filters_list, rerolls_used_list = build_validated_scenarios_for_provider(
-                    server_url=server_url,
-                    token=token,
-                    site_id=site_id,
-                    reference_view_id=reference_view_id,
-                    dashboard_name=dashboard_name,
-                    provider=provider,
-                    scenarios=args.scenarios,
-                    filter_pool=filter_pool,
-                    module=module,
-                    supports_survey_provider_on_ref=ref_supports_survey,
-                    supports_comparison_provider_on_ref=ref_supports_comp,
-                    seed=args.seed,
-                )
+            # Freeze filter columns list (stable ordering) for scenario file
+            all_filter_columns = sorted(all_filter_columns_set)
 
-                # Add to scenario_long_rows (for Alteryx), using the FINAL frozen scenarios
+            # Build the frozen scenarios ONCE per dashboard (same for all providers)
+            gating_provider = providers_sample[0]
+            scenario_filters_list, rerolls_used_list = build_validated_scenarios_for_dashboard(
+                server_url=server_url,
+                token=token,
+                site_id=site_id,
+                reference_view_id=reference_view_id,
+                dashboard_name=dashboard_name,
+                gating_provider=gating_provider,
+                scenarios=args.scenarios,
+                filter_pool=filter_pool,
+                module=module,
+                supports_survey_provider_on_ref=ref_supports_survey,
+                supports_comparison_provider_on_ref=ref_supports_comp,
+                seed=args.seed,
+            )
+
+            # ---- For each provider: output scenario wide + fetch data (scenarios same across providers)
+            for provider in providers_sample:
+                # (A) Scenario WIDE exploded rows
                 for scen_num in range(1, args.scenarios + 1):
                     scenario_id = f"{safe_dash}|{safe_name(provider)}|{scen_num}"
-                    scenario_long_rows.extend(
-                        scenario_filters_to_long_rows(
+                    scenario_wide_rows.extend(
+                        scenario_filters_to_wide_exploded_rows(
                             dashboard_name=dashboard_name,
                             provider=provider,
                             scen_num=scen_num,
@@ -639,10 +740,12 @@ def main():
                             reference_sheet=reference_sheet,
                             rerolls_used=rerolls_used_list[scen_num - 1],
                             final_filters=scenario_filters_list[scen_num - 1],
+                            all_filter_columns=all_filter_columns,
+                            exclude_filter_columns=exclude_filter_columns,
                         )
                     )
 
-                # (B) Create fetch jobs across all sheets & scenarios (no randomness here)
+                # (B) Create fetch jobs across all sheets & scenarios
                 jobs = []
                 for sheet_name in dash_sheet_colmap.keys():
                     norm = normalize_view_name(sheet_name)
@@ -657,12 +760,10 @@ def main():
                     supports_comp = sheet_supports.get(sheet_name, {}).get("comparison", False)
 
                     for scen_num in range(1, args.scenarios + 1):
-                        # Start from the frozen scenario filters (validated on ref)
                         base_filters = scenario_filters_list[scen_num - 1]
                         final_filters = dict(base_filters)
 
-                        # Apply provider pills for THIS SHEET only if mapping says it supports them
-                        # (Even if reference had provider pills, we still enforce sheet-level correctness.)
+                        # Apply provider pills per sheet support
                         if supports_survey and hasattr(module, "SURVEY_PROVIDER_FIELD"):
                             final_filters[module.SURVEY_PROVIDER_FIELD] = [provider]
                         else:
@@ -696,7 +797,6 @@ def main():
                             continue
 
                         if not res["got_data"]:
-                            # Not fatal; this can happen on non-reference sheets.
                             print(f"⚠️ No data: Dashboard '{dashboard_name}' | Sheet '{sheet_name}' | "
                                   f"Provider '{provider_x}' | Scenario {scen_num} | "
                                   f"filters: {res['filter_selection']}")
@@ -705,18 +805,45 @@ def main():
                         if df is None or df.empty:
                             continue
 
-                        # Rename columns per mapping
-                        colmap = dash_sheet_colmap[sheet_name]
-                        df_mod = df.copy()
-                        rename_dict = {raw: gen for raw, gen in colmap.items() if raw in df_mod.columns}
-                        df_mod = df_mod.rename(columns=rename_dict)
+                        # 1) Rename columns per mapping
+                        df_mod = df.copy()  # keep Tableau column headers as-is
 
-                        # Add tracking columns
+
+                        # 2) Ensure standard context columns exist on every sheet
+                        filters_used = res.get("filters", {}) or {}
+
+                        def _pick(vals):
+                            if vals is None:
+                                return ""
+                            if isinstance(vals, list):
+                                if len(vals) == 0:
+                                    return ""
+                                if len(vals) == 1:
+                                    return str(vals[0])
+                                return ", ".join(str(x) for x in vals)
+                            return str(vals)
+
+                        # Pull values from the ACTUAL filter fields used in the scenario
+                        product_val = _pick(filters_used.get(getattr(module, "PRODUCT_FIELD", "product_name")))
+                        episode_val = _pick(filters_used.get(getattr(module, "EPISODE_FIELD", "episode_name")))
+                        question_val = _pick(filters_used.get(getattr(module, "QUESTION_FIELD", "txt_question_long_prefix (group)")))
+
+                        # Add only if missing from the view output
+                        if "product" not in df_mod.columns:
+                            df_mod["product"] = product_val
+                        if "episode" not in df_mod.columns:
+                            df_mod["episode"] = episode_val
+                        if "txt_question_long" not in df_mod.columns:
+                            df_mod["txt_question_long"] = question_val
+
+                        # 3) Tracking columns (super useful)
                         df_mod["scenario"] = res["scenario"]
                         df_mod["filter_selection"] = res["filter_selection"]
                         df_mod["provider"] = res["provider"]
 
+                        # 4) Store
                         results_by_sheet[sheet_name].append(df_mod)
+
 
             # Write dashboard excel after all providers processed
             with pd.ExcelWriter(excel_out, engine="openpyxl") as writer:
@@ -728,12 +855,19 @@ def main():
 
             print(f"\n📘 Created Excel for dashboard '{dashboard_name}': {excel_out}\n")
 
-        # Write scenario file for Alteryx (long format)
-        if scenario_long_rows:
-            scen_df = pd.DataFrame(scenario_long_rows)
-            scen_out = out_dir / "scenario_long.csv"
+        # Write scenario file for Alteryx (WIDE-EXPLODED format)
+        if scenario_wide_rows:
+            scen_df = pd.DataFrame(scenario_wide_rows)
+
+            meta_cols = ["scenario_id", "dashboard_name", "provider", "scenario", "reference_sheet", "rerolls_used"]
+            other_cols = [c for c in scen_df.columns if c not in meta_cols]
+
+            # Keep stable ordering: meta first, then filters alphabetically (as built)
+            scen_df = scen_df[meta_cols + other_cols]
+
+            scen_out = out_dir / "scenario_wide_exploded.csv"
             scen_df.to_csv(scen_out, index=False)
-            print(f"🧾 Scenario (long) file written for Alteryx: {scen_out}")
+            print(f"🧾 Scenario (wide exploded) file written for Alteryx: {scen_out}")
 
     finally:
         if token:
