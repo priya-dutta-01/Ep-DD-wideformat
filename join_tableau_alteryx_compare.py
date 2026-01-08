@@ -389,6 +389,100 @@ def main():
                 indicator=True,
             )
 
+            def _blank(s):
+                return s.isna() | (s.astype(str).str.strip() == "")
+
+            # Pick the tableau filter selection col (it might be unsuffixed in some cases)
+            fs_t_col = "filter_selection__tableau" if "filter_selection__tableau" in merged.columns else (
+                "filter_selection" if "filter_selection" in merged.columns else None
+            )
+
+            # Also consider an alteryx-side filter selection if present
+            fs_a_col = "filter_selection__alteryx" if "filter_selection__alteryx" in merged.columns else None
+
+            # Find scenario column
+            sc_col = None
+            for cand in ["scenario", "scenario__tableau", "scenario__alteryx"]:
+                if cand in merged.columns:
+                    sc_col = cand
+                    break
+
+            # Find provider column (optional)
+            prov_col = None
+            for cand in ["provider", "provider__tableau", "provider__alteryx", "survey_provider", "comparison_provider"]:
+                if cand in merged.columns:
+                    prov_col = cand
+                    break
+
+            if fs_t_col and sc_col:
+                # Build a lookup from rows that DO have tableau filter_selection
+                src = merged.copy()
+                src_nonblank = src[~_blank(src[fs_t_col])]
+
+                if prov_col and prov_col in merged.columns:
+                    key = [prov_col, sc_col]
+                    lut = (
+                        src_nonblank.groupby(key)[fs_t_col]
+                        .first()
+                        .to_dict()
+                    )
+
+                    # Fill tableau blanks using (provider, scenario) lookup
+                    if "filter_selection__tableau" in merged.columns:
+                        m = _blank(merged["filter_selection__tableau"])
+                        merged.loc[m, "filter_selection__tableau"] = merged.loc[m].apply(
+                            lambda r: lut.get((r.get(prov_col), r.get(sc_col))), axis=1
+                        )
+                else:
+                    # Fallback: scenario-only lookup
+                    lut = (
+                        src_nonblank.groupby(sc_col)[fs_t_col]
+                        .first()
+                        .to_dict()
+                    )
+                    if "filter_selection__tableau" in merged.columns:
+                        m = _blank(merged["filter_selection__tableau"])
+                        merged.loc[m, "filter_selection__tableau"] = merged.loc[m, sc_col].map(lut)
+
+                # Final fallback: if still blank, copy from alteryx-side filter_selection (if you created/populated it)
+                if "filter_selection__tableau" in merged.columns:
+                    m2 = _blank(merged["filter_selection__tableau"])
+                    if fs_a_col and fs_a_col in merged.columns:
+                        merged.loc[m2, "filter_selection__tableau"] = merged.loc[m2, fs_a_col]
+                    elif "filter_selection" in merged.columns:
+                        merged.loc[m2, "filter_selection__tableau"] = merged.loc[m2, "filter_selection"]
+
+
+            # ------------------------------------------------------------
+            # Fill blank filter_selection by scenario lookup within merged
+            # ------------------------------------------------------------
+
+            # 1) identify the scenario column that exists in merged
+            # prefer exact 'scenario', else try common suffix variants
+            scenario_col = None
+            for cand in ["scenario", "scenario__tableau", "scenario__alteryx"]:
+                if cand in merged.columns:
+                    scenario_col = cand
+                    break
+
+            if scenario_col and "filter_selection" in merged.columns:
+                # build a map: scenario -> first non-blank filter_selection found in merged
+                nonblank = merged[
+                    merged["filter_selection"].notna()
+                    & (merged["filter_selection"].astype(str).str.strip() != "")
+                ].copy()
+
+                scen_to_fs = (
+                    nonblank.groupby(scenario_col)["filter_selection"]
+                    .first()
+                    .to_dict()
+                )
+
+                # fill blanks using that map
+                mask = merged["filter_selection"].isna() | (merged["filter_selection"].astype(str).str.strip() == "")
+                merged.loc[mask, "filter_selection"] = merged.loc[mask, scenario_col].map(scen_to_fs)
+
+
             # Merge summary
             ms = merged["_merge"].value_counts(dropna=False).rename_axis("_merge").reset_index(name="rows")
             ms.insert(0, "sheet", sheet)
