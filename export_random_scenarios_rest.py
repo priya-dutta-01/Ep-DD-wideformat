@@ -55,13 +55,17 @@ class DashboardModule:
 
 
 class EpisodeDeepDiveModule(DashboardModule):
-    PERIOD_FIELD = "period" #Can be moved to mapping excel
-    PRODUCT_FIELD = "product_name" #Needs to be changed for different instruments
+    PERIOD_FIELD = "period"  # Can be moved to mapping excel
+    PRODUCT_FIELD = "product_name"  # Needs to be changed for different instruments
     EPISODE_FIELD = "episode_name"
     QUESTION_FIELD = "txt_question_long_prefix (group)"
 
     SURVEY_PROVIDER_FIELD = "survey_provider"
     COMPARISON_PROVIDER_FIELD = "comparison_provider"
+
+    # NEW: provider-like parameters
+    BRAND_INTEREST_FIELD = "brand_of_interest_para"
+    BRAND_COMPARISON_FIELD = "brand_of_comparison_para"
 
     def __init__(self, dashboard_name: str, combo_pool: Dict[Tuple[str, str], List[str]]):
         super().__init__(dashboard_name)
@@ -75,6 +79,8 @@ class EpisodeDeepDiveModule(DashboardModule):
             self.QUESTION_FIELD,
             self.SURVEY_PROVIDER_FIELD,
             self.COMPARISON_PROVIDER_FIELD,
+            self.BRAND_INTEREST_FIELD,
+            self.BRAND_COMPARISON_FIELD,
         ]
 
     def validate_ready(self) -> None:
@@ -143,8 +149,9 @@ def smart_split_values(values_str: str) -> list[str]:
 
 def normalize_selected_values(vals: List[object]) -> List[object]:
     """
-    Fix the exact issue you reported:
-      if a selected value itself contains comma-separated items (e.g. "18-24, 25-34, 35-44"),
+    Fix issue:
+      if a selected value itself contains comma-separated items
+      (e.g. "18-24, 25-34, 35-44"),
       expand it into multiple values so the WIDE explosion creates multiple rows.
 
     Important: uses smart_split_values, so "$100,000" will NOT get split.
@@ -160,7 +167,6 @@ def normalize_selected_values(vals: List[object]) -> List[object]:
 
         if "," in s:
             parts = smart_split_values(s)
-            # If it actually split into multiple meaningful parts, expand; otherwise keep as-is
             if len(parts) > 1:
                 out.extend(parts)
             else:
@@ -414,8 +420,7 @@ def scenario_filters_to_wide_exploded_rows(
       - fixed metadata cols
       - one col per filter in all_filter_columns
       - cartesian explosion across multi-valued filters
-      - IMPORTANT FIX: if any selected value is itself a comma-separated string, expand it into multiple values
-        (e.g. "18-24, 25-34, 35-44" -> separate values -> separate exploded rows).
+      - expand comma-separated "csv-in-a-cell" values into separate exploded rows
     """
     exclude_filter_columns = exclude_filter_columns or set()
 
@@ -433,7 +438,6 @@ def scenario_filters_to_wide_exploded_rows(
             per_filter_values.append([pd.NA])
             continue
 
-        # FIX: expand any comma-separated "csv-in-a-cell" values into separate values
         expanded = normalize_selected_values(raw_vals)
 
         if not expanded:
@@ -474,6 +478,8 @@ def build_validated_scenarios_for_dashboard(
     module: DashboardModule,
     supports_survey_provider_on_ref: bool,
     supports_comparison_provider_on_ref: bool,
+    supports_brand_interest_on_ref: bool,
+    supports_brand_comparison_on_ref: bool,
     seed: Optional[int],
 ) -> Tuple[List[Dict[str, List[str]]], List[int]]:
     """
@@ -497,11 +503,16 @@ def build_validated_scenarios_for_dashboard(
             final_filters.update(random_selected)
             final_filters.update(fixed_selected)
 
-            # Apply provider pills ONLY for gating on reference sheet (single provider)
+            # Apply provider controls ONLY for gating on reference sheet (single provider)
             if supports_survey_provider_on_ref and hasattr(module, "SURVEY_PROVIDER_FIELD"):
                 final_filters[module.SURVEY_PROVIDER_FIELD] = [gating_provider]
             if supports_comparison_provider_on_ref and hasattr(module, "COMPARISON_PROVIDER_FIELD"):
                 final_filters[module.COMPARISON_PROVIDER_FIELD] = [gating_provider]
+
+            if supports_brand_interest_on_ref and hasattr(module, "BRAND_INTEREST_FIELD"):
+                final_filters[module.BRAND_INTEREST_FIELD] = [gating_provider]
+            if supports_brand_comparison_on_ref and hasattr(module, "BRAND_COMPARISON_FIELD"):
+                final_filters[module.BRAND_COMPARISON_FIELD] = [gating_provider]
 
             last_filters = final_filters
 
@@ -518,7 +529,7 @@ def build_validated_scenarios_for_dashboard(
             scenario_filters.append(last_filters)
             rerolls_used_list.append(MAX_SCENARIO_REROLLS)
 
-    # Strip provider pills from frozen base scenarios (so they are provider-agnostic)
+    # Strip provider controls from frozen base scenarios (so they are provider-agnostic)
     if hasattr(module, "SURVEY_PROVIDER_FIELD"):
         sp = module.SURVEY_PROVIDER_FIELD
         for d in scenario_filters:
@@ -527,6 +538,15 @@ def build_validated_scenarios_for_dashboard(
         cp = module.COMPARISON_PROVIDER_FIELD
         for d in scenario_filters:
             d.pop(cp, None)
+
+    if hasattr(module, "BRAND_INTEREST_FIELD"):
+        bi = module.BRAND_INTEREST_FIELD
+        for d in scenario_filters:
+            d.pop(bi, None)
+    if hasattr(module, "BRAND_COMPARISON_FIELD"):
+        bc = module.BRAND_COMPARISON_FIELD
+        for d in scenario_filters:
+            d.pop(bc, None)
 
     return scenario_filters, rerolls_used_list
 
@@ -624,8 +644,7 @@ def main():
         vals_raw = row["filter values"]
         vals = smart_split_values(vals_raw)
 
-        # Also handle cases where a cell might contain pipe-delimited values
-        # (common in some mapping files). If there is '|' we split that too.
+        # Also handle pipe-delimited values
         if len(vals) == 1 and isinstance(vals_raw, str) and "|" in vals_raw:
             vals = [p.strip() for p in str(vals_raw).split("|") if p.strip()]
 
@@ -637,7 +656,12 @@ def main():
         raise ValueError("No filters found in filter_details.")
 
     # Exclude provider-pill filter columns (we already have 'provider' column)
-    exclude_filter_columns = {"survey_provider", "comparison_provider"}
+    exclude_filter_columns = {
+        "survey_provider",
+        "comparison_provider",
+        "brand_of_interest_para",
+        "brand_of_comparison_para",
+    }
 
     # Accumulate WIDE exploded scenario rows for Alteryx
     scenario_wide_rows: List[Dict[str, object]] = []
@@ -670,22 +694,13 @@ def main():
             for f in module.remove_from_random_pool():
                 filter_pool.pop(f, None)
 
-            # Build sheet -> colmap + provider pill support per sheet
+            # Build sheet list for dashboard
             dash_sheet_colmap: Dict[str, Dict[str, str]] = {}
-            sheet_supports: Dict[str, Dict[str, bool]] = {}
-
             for sheet, g in dash_group.groupby("sheet name"):
                 sheet_name = str(sheet)
-
                 dash_sheet_colmap[sheet_name] = dict(
                     zip(g["column name"].astype(str), g["generic column name"].astype(str))
                 )
-
-                col_names_lower = [str(x).strip().lower() for x in g["column name"].astype(str).tolist()]
-                sheet_supports[sheet_name] = {
-                    "survey": ("survey_provider" in col_names_lower),
-                    "comparison": ("comparison_provider" in col_names_lower),
-                }
 
             # Pick a reference sheet
             reference_sheet = list(dash_sheet_colmap.keys())[0]
@@ -696,8 +711,6 @@ def main():
                     f"Tried normalized name '{ref_norm}'."
                 )
             reference_view_id = view_lookup[ref_norm]
-            ref_supports_survey = sheet_supports.get(reference_sheet, {}).get("survey", False)
-            ref_supports_comp = sheet_supports.get(reference_sheet, {}).get("comparison", False)
 
             print(f"\n🧩 Dashboard '{dashboard_name}': reference sheet = '{reference_sheet}'")
 
@@ -721,8 +734,11 @@ def main():
                 scenarios=args.scenarios,
                 filter_pool=filter_pool,
                 module=module,
-                supports_survey_provider_on_ref=ref_supports_survey,
-                supports_comparison_provider_on_ref=ref_supports_comp,
+                # IMPORTANT: don't infer "support" from output columns; use module capability
+                supports_survey_provider_on_ref=hasattr(module, "SURVEY_PROVIDER_FIELD"),
+                supports_comparison_provider_on_ref=hasattr(module, "COMPARISON_PROVIDER_FIELD"),
+                supports_brand_interest_on_ref=hasattr(module, "BRAND_INTEREST_FIELD"),
+                supports_brand_comparison_on_ref=hasattr(module, "BRAND_COMPARISON_FIELD"),
                 seed=args.seed,
             )
 
@@ -756,23 +772,21 @@ def main():
                         )
                     view_id = view_lookup[norm]
 
-                    supports_survey = sheet_supports.get(sheet_name, {}).get("survey", False)
-                    supports_comp = sheet_supports.get(sheet_name, {}).get("comparison", False)
-
                     for scen_num in range(1, args.scenarios + 1):
                         base_filters = scenario_filters_list[scen_num - 1]
                         final_filters = dict(base_filters)
 
-                        # Apply provider pills per sheet support
-                        if supports_survey and hasattr(module, "SURVEY_PROVIDER_FIELD"):
+                        # IMPORTANT FIX:
+                        # Always apply provider controls for real fetches.
+                        # (Tableau often needs these even if they are not output columns.)
+                        if hasattr(module, "SURVEY_PROVIDER_FIELD"):
                             final_filters[module.SURVEY_PROVIDER_FIELD] = [provider]
-                        else:
-                            final_filters.pop(getattr(module, "SURVEY_PROVIDER_FIELD", "survey_provider"), None)
-
-                        if supports_comp and hasattr(module, "COMPARISON_PROVIDER_FIELD"):
+                        if hasattr(module, "COMPARISON_PROVIDER_FIELD"):
                             final_filters[module.COMPARISON_PROVIDER_FIELD] = [provider]
-                        else:
-                            final_filters.pop(getattr(module, "COMPARISON_PROVIDER_FIELD", "comparison_provider"), None)
+                        if hasattr(module, "BRAND_INTEREST_FIELD"):
+                            final_filters[module.BRAND_INTEREST_FIELD] = [provider]
+                        if hasattr(module, "BRAND_COMPARISON_FIELD"):
+                            final_filters[module.BRAND_COMPARISON_FIELD] = [provider]
 
                         jobs.append((view_id, sheet_name, provider, scen_num, final_filters))
 
@@ -805,11 +819,10 @@ def main():
                         if df is None or df.empty:
                             continue
 
-                        # 1) Rename columns per mapping
-                        df_mod = df.copy()  # keep Tableau column headers as-is
+                        # Keep Tableau column headers as-is
+                        df_mod = df.copy()
 
-
-                        # 2) Ensure standard context columns exist on every sheet
+                        # Ensure standard context columns exist on every sheet
                         filters_used = res.get("filters", {}) or {}
 
                         def _pick(vals):
@@ -823,12 +836,10 @@ def main():
                                 return ", ".join(str(x) for x in vals)
                             return str(vals)
 
-                        # Pull values from the ACTUAL filter fields used in the scenario
                         product_val = _pick(filters_used.get(getattr(module, "PRODUCT_FIELD", "product_name")))
                         episode_val = _pick(filters_used.get(getattr(module, "EPISODE_FIELD", "episode_name")))
                         question_val = _pick(filters_used.get(getattr(module, "QUESTION_FIELD", "txt_question_long_prefix (group)")))
 
-                        # Add only if missing from the view output
                         if "product" not in df_mod.columns:
                             df_mod["product"] = product_val
                         if "episode" not in df_mod.columns:
@@ -836,14 +847,12 @@ def main():
                         if "txt_question_long" not in df_mod.columns:
                             df_mod["txt_question_long"] = question_val
 
-                        # 3) Tracking columns (super useful)
+                        # Tracking columns
                         df_mod["scenario"] = res["scenario"]
                         df_mod["filter_selection"] = res["filter_selection"]
                         df_mod["provider"] = res["provider"]
 
-                        # 4) Store
                         results_by_sheet[sheet_name].append(df_mod)
-
 
             # Write dashboard excel after all providers processed
             with pd.ExcelWriter(excel_out, engine="openpyxl") as writer:
