@@ -15361,7 +15361,7 @@ Contains ([name], ".28.3.")</Expression>
       </GuiSettings>
       <Properties>
         <Configuration>
-          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_37076_8e979a73ad0f4e79934fec16ab0cb6f2_\Engine_37076_65e66610d6db4373ac2e0ac49464351e~.yxdb</TempFile>
+          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_8636_548b570b7b2d43e6a66a89f860ea3ddb_\Engine_8636_fe325c3495ef4d4fa833e80577773230~.yxdb</TempFile>
           <TempFileDataProfiling />
           <Layout>
             <ViewMode>Single</ViewMode>
@@ -15667,7 +15667,7 @@ IF [Question Detai...</DefaultAnnotationText>
       </GuiSettings>
       <Properties>
         <Configuration>
-          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_37076_8e979a73ad0f4e79934fec16ab0cb6f2_\Engine_37076_c374f6ab87854531b3ba3cc54ca4a2ad~.yxdb</TempFile>
+          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_8636_548b570b7b2d43e6a66a89f860ea3ddb_\Engine_8636_f31a7eac7ef149b3ab0856f56b4ca79a~.yxdb</TempFile>
           <TempFileDataProfiling />
           <Layout>
             <ViewMode>Single</ViewMode>
@@ -15695,7 +15695,7 @@ IF [Question Detai...</DefaultAnnotationText>
       </GuiSettings>
       <Properties>
         <Configuration>
-          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_37076_8e979a73ad0f4e79934fec16ab0cb6f2_\Engine_37076_787c8552aae9486da68d1c0f30f057c4~.yxdb</TempFile>
+          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_8636_548b570b7b2d43e6a66a89f860ea3ddb_\Engine_8636_5d9d9ed665324ac49941c66815f1b0e9~.yxdb</TempFile>
           <TempFileDataProfiling />
           <Layout>
             <ViewMode>Single</ViewMode>
@@ -15970,7 +15970,7 @@ Query=`ref_datamap$`</DefaultAnnotationText>
       </GuiSettings>
       <Properties>
         <Configuration>
-          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_37076_8e979a73ad0f4e79934fec16ab0cb6f2_\Engine_37076_1e338fb94616462c8a6ef3228c271ec5~.yxdb</TempFile>
+          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_8636_548b570b7b2d43e6a66a89f860ea3ddb_\Engine_8636_1aaf6567f17349aaa6f0602b081a1aee~.yxdb</TempFile>
           <TempFileDataProfiling />
           <Layout>
             <ViewMode>Single</ViewMode>
@@ -16028,8 +16028,10 @@ Query=`ref_datamap$`</DefaultAnnotationText>
             <Field name="rerolls_used" size="254" source="File: C:\Users\57948\OneDrive - Bain\Documents\Ep-DD-wideformat\exports\scenario_wide_exploded.csv" type="V_String" />
             <Field name="Resp Age Category" size="254" source="File: C:\Users\57948\OneDrive - Bain\Documents\Ep-DD-wideformat\exports\scenario_wide_exploded.csv" type="V_String" />
             <Field name="episode_name" size="254" source="File: C:\Users\57948\OneDrive - Bain\Documents\Ep-DD-wideformat\exports\scenario_wide_exploded.csv" type="V_String" />
+            <Field name="household_income" size="254" source="File: C:\Users\57948\OneDrive - Bain\Documents\Ep-DD-wideformat\exports\scenario_wide_exploded.csv" type="V_String" />
             <Field name="period" size="254" source="File: C:\Users\57948\OneDrive - Bain\Documents\Ep-DD-wideformat\exports\scenario_wide_exploded.csv" type="V_String" />
             <Field name="product_name" size="254" source="File: C:\Users\57948\OneDrive - Bain\Documents\Ep-DD-wideformat\exports\scenario_wide_exploded.csv" type="V_String" />
+            <Field name="region" size="254" source="File: C:\Users\57948\OneDrive - Bain\Documents\Ep-DD-wideformat\exports\scenario_wide_exploded.csv" type="V_String" />
             <Field name="txt_question_long_prefix (group)" size="254" source="File: C:\Users\57948\OneDrive - Bain\Documents\Ep-DD-wideformat\exports\scenario_wide_exploded.csv" type="V_String" />
           </RecordInfo>
         </MetaInfo>
@@ -16064,7 +16066,7 @@ Query=`ref_datamap$`</DefaultAnnotationText>
     </Node>
     <Node ToolID="102">
       <GuiSettings Plugin="AlteryxBasePluginsGui.AppendFields.AppendFields">
-        <Position x="6702" y="558" />
+        <Position x="6894" y="558" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -16074,8 +16076,8 @@ Query=`ref_datamap$`</DefaultAnnotationText>
               <OrderChanged value="False" />
               <CommaDecimal value="False" />
               <SelectFields>
-                <SelectField field="Source_customer_tenure" selected="True" rename="Source_customer_tenure" input="Source_" />
                 <SelectField field="Source_household_income" selected="True" rename="Source_household_income" input="Source_" />
+                <SelectField field="Source_customer_tenure" selected="True" rename="Source_customer_tenure" input="Source_" />
                 <SelectField field="*Unknown" selected="True" />
               </SelectFields>
             </Configuration>
@@ -16091,12 +16093,12 @@ Query=`ref_datamap$`</DefaultAnnotationText>
     </Node>
     <Node ToolID="103">
       <GuiSettings Plugin="AlteryxBasePluginsGui.Filter.Filter">
-        <Position x="7026" y="558" />
+        <Position x="7182" y="558" />
       </GuiSettings>
       <Properties>
         <Configuration>
-          <Expression>//( IsNull([Region]) OR [Region] = [Actual_region] )
-//AND
+          <Expression>( IsNull([Region]) OR [Region] = [Actual_region] )
+AND
 ( IsNull([Resp Age Category]) OR [Resp Age Category] = [hage] )
 AND
 ( [product_name] = [Question Detail Product] )
@@ -16106,26 +16108,26 @@ AND
 ( [txt_question_long_prefix (group)] = [Question])
 AND
 ( [CV.SurvBank.143.1.1] = [provider])
-//AND
-//( IsNull([Source_household_income]) OR [Source_household_income] = [Household_income])
-//AND
-//( IsNull([most_recent_checking_account_experience]) OR [most_recent_checking_account_experience] = [Most recent checking account exp])
-//AND
-//( IsNull([live_in_canada]) OR [Live in canada] = [live_in_canada])
-//AND
+AND
+( IsNull([Source_household_income]) OR [Source_household_income] = [Household_income])
+AND
+( IsNull([most_recent_checking_account_experience]) OR [most_recent_checking_account_experience] = [Most recent checking account exp])
+AND
+( IsNull([live_in_canada]) OR [Live in canada] = [live_in_canada])
+AND
 
-//( IsNull([Source_customer_tenure]) OR [Source_customer_tenure] = [customer_tenure])
-//AND
-//( IsNull([liquid_investible_assets]) OR [liquid_investible_assets] = [Household_investable_assets])
-//AND
-//( IsNull([initial_channel_category]) OR [initial_channel_category] = [channel])</Expression>
+( IsNull([Source_customer_tenure]) OR [Source_customer_tenure] = [customer_tenure])
+AND
+( IsNull([liquid_investible_assets]) OR [liquid_investible_assets] = [Household_investable_assets])
+AND
+( IsNull([initial_channel_category]) OR [initial_channel_category] = [channel])</Expression>
           <Mode>Custom</Mode>
         </Configuration>
         <Annotation DisplayMode="0">
           <Name />
-          <DefaultAnnotationText>//( IsNull([Region]) OR [Region] = [Actual_region] )
-//AND
-( IsNull([Resp Age Ca...</DefaultAnnotationText>
+          <DefaultAnnotationText>( IsNull([Region]) OR [Region] = [Actual_region] )
+AND
+( IsNull([Resp Age Catego...</DefaultAnnotationText>
           <Left value="False" />
         </Annotation>
       </Properties>
@@ -16133,7 +16135,7 @@ AND
     </Node>
     <Node ToolID="104">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7026" y="750" />
+        <Position x="7182" y="1158" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -16151,7 +16153,7 @@ AND
     </Node>
     <Node ToolID="105">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7206" y="798" />
+        <Position x="7326" y="1206" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -16169,7 +16171,7 @@ AND
     </Node>
     <Node ToolID="106">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7206" y="750" />
+        <Position x="7326" y="1158" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -16187,7 +16189,7 @@ AND
     </Node>
     <Node ToolID="107">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7026" y="798" />
+        <Position x="7182" y="1206" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -16205,7 +16207,7 @@ AND
     </Node>
     <Node ToolID="108">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7026" y="858" />
+        <Position x="7182" y="1266" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -16223,7 +16225,7 @@ AND
     </Node>
     <Node ToolID="109">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7026" y="906" />
+        <Position x="7182" y="1314" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -16241,7 +16243,7 @@ AND
     </Node>
     <Node ToolID="110">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7026" y="954" />
+        <Position x="7182" y="1362" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -16259,11 +16261,11 @@ AND
     </Node>
     <Node ToolID="111">
       <GuiSettings Plugin="AlteryxBasePluginsGui.BrowseV2.BrowseV2">
-        <Position x="7110" y="954" />
+        <Position x="7278" y="1362" />
       </GuiSettings>
       <Properties>
         <Configuration>
-          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_37076_8e979a73ad0f4e79934fec16ab0cb6f2_\Engine_37076_17668c0208cd4ad9b904c978393941c4~.yxdb</TempFile>
+          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_8636_548b570b7b2d43e6a66a89f860ea3ddb_\Engine_8636_1f11ebb2bc01452aad08cc5a687ef9df~.yxdb</TempFile>
           <TempFileDataProfiling />
           <Layout>
             <ViewMode>Single</ViewMode>
@@ -16287,7 +16289,7 @@ AND
     </Node>
     <Node ToolID="112">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7206" y="858" />
+        <Position x="7326" y="1266" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -16305,7 +16307,7 @@ AND
     </Node>
     <Node ToolID="113">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7206" y="906" />
+        <Position x="7326" y="1314" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -16323,7 +16325,7 @@ AND
     </Node>
     <Node ToolID="114">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7206" y="954" />
+        <Position x="7326" y="1362" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -16341,11 +16343,11 @@ AND
     </Node>
     <Node ToolID="115">
       <GuiSettings Plugin="AlteryxBasePluginsGui.BrowseV2.BrowseV2">
-        <Position x="7302" y="954" />
+        <Position x="7422" y="1362" />
       </GuiSettings>
       <Properties>
         <Configuration>
-          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_37076_8e979a73ad0f4e79934fec16ab0cb6f2_\Engine_37076_92434ed7da924765b665052f900ce0a2~.yxdb</TempFile>
+          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_8636_548b570b7b2d43e6a66a89f860ea3ddb_\Engine_8636_54e1380adf514e249fa13af4dfa1ed2d~.yxdb</TempFile>
           <TempFileDataProfiling />
           <Layout>
             <ViewMode>Single</ViewMode>
@@ -16555,7 +16557,7 @@ AND
     </Node>
     <Node ToolID="141">
       <GuiSettings Plugin="AlteryxBasePluginsGui.JoinMultiple.JoinMultiple">
-        <Position x="8958" y="546" />
+        <Position x="8814" y="546" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -16608,6 +16610,20 @@ AND
                 <SelectField field="Input_#2_Sum_Promoter" selected="True" />
                 <SelectField field="Input_#2_Question" selected="True" />
                 <SelectField field="Input_#2_NPS" selected="True" />
+                <SelectField field="Input_#3_%_round" selected="True" />
+                <SelectField field="Input_#1_scenario" selected="True" />
+                <SelectField field="Input_#1_Question Detail Product" selected="True" />
+                <SelectField field="Input_#1_Episode DD Completion" selected="True" />
+                <SelectField field="Input_#1_Question" selected="True" />
+                <SelectField field="Input_#1_Value" selected="True" />
+                <SelectField field="Input_#1_Sum_Promoter" selected="True" />
+                <SelectField field="Input_#1_Sum_Passive" selected="True" />
+                <SelectField field="Input_#1_Sum_Detractor" selected="True" />
+                <SelectField field="Input_#1_Total_N" selected="True" />
+                <SelectField field="Input_#1_Promoter_%_prov" selected="True" />
+                <SelectField field="Input_#1_Passive_%_prov" selected="True" />
+                <SelectField field="Input_#1_Detractor_%_prov" selected="True" />
+                <SelectField field="Input_#1_NPS_prov" selected="True" />
                 <SelectField field="*Unknown" selected="True" />
               </SelectFields>
             </Configuration>
@@ -16623,7 +16639,7 @@ AND
     </Node>
     <Node ToolID="142">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7026" y="1014" />
+        <Position x="7182" y="1422" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -16641,7 +16657,7 @@ AND
     </Node>
     <Node ToolID="143">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7206" y="1014" />
+        <Position x="7326" y="1422" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -17167,7 +17183,7 @@ Query=`Channel mapping$`</DefaultAnnotationText>
     </Node>
     <Node ToolID="164">
       <GuiSettings Plugin="AlteryxBasePluginsGui.AlteryxSelect.AlteryxSelect">
-        <Position x="6798" y="558" />
+        <Position x="7086" y="558" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -17217,16 +17233,25 @@ Query=`Channel mapping$`</DefaultAnnotationText>
     </Node>
     <Node ToolID="166">
       <GuiSettings Plugin="AlteryxBasePluginsGui.Unique.Unique">
-        <Position x="6594" y="810" />
+        <Position x="6798" y="810" />
       </GuiSettings>
       <Properties>
         <Configuration>
           <UniqueFields>
-            <Field field="scenario" />
-            <Field field="Resp Age Category" />
             <Field field="episode_name" />
+            <Field field="household_income" />
+            <Field field="initial_channel_category" />
+            <Field field="liquid_investible_assets" />
+            <Field field="live_in_canada" />
+            <Field field="most_recent_checking_account_experience" />
             <Field field="period" />
             <Field field="product_name" />
+            <Field field="region" />
+            <Field field="Resp Age Category" />
+            <Field field="Resp_Age_Category" />
+            <Field field="scenario" />
+            <Field field="Source_customer_tenure" />
+            <Field field="Source_household_income" />
             <Field field="txt_question_long_prefix (group)" />
           </UniqueFields>
         </Configuration>
@@ -17356,11 +17381,11 @@ Query=`Channel mapping$`</DefaultAnnotationText>
     </Node>
     <Node ToolID="170">
       <GuiSettings Plugin="AlteryxBasePluginsGui.BrowseV2.BrowseV2">
-        <Position x="9078" y="546" />
+        <Position x="9222" y="558" />
       </GuiSettings>
       <Properties>
         <Configuration>
-          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_37076_8e979a73ad0f4e79934fec16ab0cb6f2_\Engine_37076_13ff640655f84b48b5ad3af8c8ad55a9~.yxdb</TempFile>
+          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_8636_548b570b7b2d43e6a66a89f860ea3ddb_\Engine_8636_ddc8bc2375874951a9566a0978ec6a70~.yxdb</TempFile>
           <TempFileDataProfiling />
           <Layout>
             <ViewMode>Single</ViewMode>
@@ -17384,7 +17409,7 @@ Query=`Channel mapping$`</DefaultAnnotationText>
     </Node>
     <Node ToolID="171">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7026" y="1074" />
+        <Position x="7182" y="1482" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -17402,7 +17427,7 @@ Query=`Channel mapping$`</DefaultAnnotationText>
     </Node>
     <Node ToolID="172">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7206" y="1074" />
+        <Position x="7326" y="1482" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -17420,7 +17445,7 @@ Query=`Channel mapping$`</DefaultAnnotationText>
     </Node>
     <Node ToolID="173">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7026" y="1134" />
+        <Position x="7182" y="1542" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -17438,7 +17463,7 @@ Query=`Channel mapping$`</DefaultAnnotationText>
     </Node>
     <Node ToolID="174">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7206" y="1134" />
+        <Position x="7326" y="1542" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -17456,7 +17481,7 @@ Query=`Channel mapping$`</DefaultAnnotationText>
     </Node>
     <Node ToolID="175">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7026" y="1194" />
+        <Position x="7182" y="1602" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -17474,7 +17499,7 @@ Query=`Channel mapping$`</DefaultAnnotationText>
     </Node>
     <Node ToolID="176">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7206" y="1194" />
+        <Position x="7326" y="1602" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -17492,7 +17517,7 @@ Query=`Channel mapping$`</DefaultAnnotationText>
     </Node>
     <Node ToolID="177">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7026" y="1242" />
+        <Position x="7182" y="1650" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -17510,7 +17535,7 @@ Query=`Channel mapping$`</DefaultAnnotationText>
     </Node>
     <Node ToolID="178">
       <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
-        <Position x="7206" y="1242" />
+        <Position x="7326" y="1650" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -17528,11 +17553,11 @@ Query=`Channel mapping$`</DefaultAnnotationText>
     </Node>
     <Node ToolID="179">
       <GuiSettings Plugin="AlteryxBasePluginsGui.BrowseV2.BrowseV2">
-        <Position x="7170" y="606" />
+        <Position x="7278" y="606" />
       </GuiSettings>
       <Properties>
         <Configuration>
-          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_37076_8e979a73ad0f4e79934fec16ab0cb6f2_\Engine_37076_b343ea70b0b840e98790e01db16490be~.yxdb</TempFile>
+          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_8636_548b570b7b2d43e6a66a89f860ea3ddb_\Engine_8636_b704cbcdcddf441096541a501c28bf4b~.yxdb</TempFile>
           <TempFileDataProfiling />
           <Layout>
             <ViewMode>Single</ViewMode>
@@ -17670,7 +17695,7 @@ Query=`ref_xref$`</DefaultAnnotationText>
     </Node>
     <Node ToolID="185">
       <GuiSettings Plugin="AlteryxBasePluginsGui.DbFileOutput.DbFileOutput">
-        <Position x="9066" y="606" />
+        <Position x="9210" y="618" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -17719,7 +17744,7 @@ ELSEIF ...</DefaultAnnotationText>
     </Node>
     <Node ToolID="187">
       <GuiSettings Plugin="AlteryxBasePluginsGui.Filter.Filter">
-        <Position x="6942" y="342" />
+        <Position x="7182" y="342" />
       </GuiSettings>
       <Properties>
         <Configuration>
@@ -17761,11 +17786,11 @@ AND
     </Node>
     <Node ToolID="188">
       <GuiSettings Plugin="AlteryxBasePluginsGui.BrowseV2.BrowseV2">
-        <Position x="7062" y="330" />
+        <Position x="7278" y="330" />
       </GuiSettings>
       <Properties>
         <Configuration>
-          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_37076_8e979a73ad0f4e79934fec16ab0cb6f2_\Engine_37076_8d68fa2db721420dbc6db2437023f6df~.yxdb</TempFile>
+          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_8636_548b570b7b2d43e6a66a89f860ea3ddb_\Engine_8636_a5f83e6774e24ee598d0bc788dfbab01~.yxdb</TempFile>
           <TempFileDataProfiling />
           <Layout>
             <ViewMode>Single</ViewMode>
@@ -17789,11 +17814,11 @@ AND
     </Node>
     <Node ToolID="189">
       <GuiSettings Plugin="AlteryxBasePluginsGui.BrowseV2.BrowseV2">
-        <Position x="7158" y="474" />
+        <Position x="7278" y="474" />
       </GuiSettings>
       <Properties>
         <Configuration>
-          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_37076_8e979a73ad0f4e79934fec16ab0cb6f2_\Engine_37076_0c5c8ef0cc284bc09dde58ffd3ae9313~.yxdb</TempFile>
+          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_8636_548b570b7b2d43e6a66a89f860ea3ddb_\Engine_8636_89e6d411db5543b093db76506191df0e~.yxdb</TempFile>
           <TempFileDataProfiling />
           <Layout>
             <ViewMode>Single</ViewMode>
@@ -28208,11 +28233,11 @@ AND
     </Node>
     <Node ToolID="194">
       <GuiSettings Plugin="AlteryxBasePluginsGui.BrowseV2.BrowseV2">
-        <Position x="7062" y="378" />
+        <Position x="7278" y="378" />
       </GuiSettings>
       <Properties>
         <Configuration>
-          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_37076_8e979a73ad0f4e79934fec16ab0cb6f2_\Engine_37076_5ea327ef8b244171953fd2a679391919~.yxdb</TempFile>
+          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_8636_548b570b7b2d43e6a66a89f860ea3ddb_\Engine_8636_988206538fa34a64992791bb46f6c697~.yxdb</TempFile>
           <TempFileDataProfiling />
           <Layout>
             <ViewMode>Single</ViewMode>
@@ -28226,6 +28251,317 @@ AND
             <View2 />
           </Layout>
         </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText />
+          <Left value="False" />
+        </Annotation>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxBrowseV2" />
+    </Node>
+    <Node ToolID="195">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.BrowseV2.BrowseV2">
+        <Position x="6102" y="462" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_8636_548b570b7b2d43e6a66a89f860ea3ddb_\Engine_8636_31d5f805d99f409fa5ed8be3f1f1ed88~.yxdb</TempFile>
+          <TempFileDataProfiling />
+          <Layout>
+            <ViewMode>Single</ViewMode>
+            <ViewSize value="100" />
+            <View1>
+              <DefaultTab>Profile</DefaultTab>
+              <Hints>
+                <Table />
+              </Hints>
+            </View1>
+            <View2 />
+          </Layout>
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText />
+          <Left value="False" />
+        </Annotation>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxBrowseV2" />
+    </Node>
+    <Node ToolID="196">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.TextInput.TextInput">
+        <Position x="6198" y="1002" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <NumRows value="8" />
+          <Fields>
+            <Field name="Fields" />
+            <Field name="Value" />
+          </Fields>
+          <Data>
+            <r>
+              <c>Region</c>
+              <c />
+            </r>
+            <r>
+              <c>Resp Age Category</c>
+              <c />
+            </r>
+            <r>
+              <c>Source_household_income</c>
+              <c />
+            </r>
+            <r>
+              <c>most_recent_checking_account_experience</c>
+              <c />
+            </r>
+            <r>
+              <c>live_in_canada</c>
+              <c />
+            </r>
+            <r>
+              <c>Source_customer_tenure</c>
+              <c />
+            </r>
+            <r>
+              <c>liquid_investible_assets</c>
+              <c />
+            </r>
+            <r>
+              <c>initial_channel_category</c>
+              <c />
+            </r>
+          </Data>
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText />
+          <Left value="False" />
+        </Annotation>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxTextInput" />
+    </Node>
+    <Node ToolID="198">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.CrossTab.CrossTab">
+        <Position x="6294" y="1002" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <GroupFields>
+            <Field field="Fields" />
+          </GroupFields>
+          <HeaderField field="Fields" />
+          <DataField field="Value" />
+          <Methods>
+            <Method method="First" />
+          </Methods>
+          <RetainSpecChars value="False" />
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText />
+          <Left value="False" />
+        </Annotation>
+        <MetaInfo connection="Output">
+          <RecordInfo>
+            <Field name="Fields" size="2147483647" source="CrossTab:Group:First:" type="V_String" />
+            <Field name="initial_channel_category" source="TextInput:" type="Bool" />
+            <Field name="liquid_investible_assets" source="TextInput:" type="Bool" />
+            <Field name="live_in_canada" source="TextInput:" type="Bool" />
+            <Field name="most_recent_checking_account_experience" source="TextInput:" type="Bool" />
+            <Field name="Region" source="TextInput:" type="Bool" />
+            <Field name="Resp_Age_Category" source="TextInput:" type="Bool" />
+            <Field name="Source_customer_tenure" source="TextInput:" type="Bool" />
+            <Field name="Source_household_income" source="TextInput:" type="Bool" />
+          </RecordInfo>
+        </MetaInfo>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxCrossTab" />
+    </Node>
+    <Node ToolID="200">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.AlteryxSelect.AlteryxSelect">
+        <Position x="6390" y="1002" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <OrderChanged value="False" />
+          <CommaDecimal value="False" />
+          <SelectFields>
+            <SelectField field="Fields" selected="False" />
+            <SelectField field="initial_channel_category" selected="True" type="V_String" size="2147483647" />
+            <SelectField field="liquid_investible_assets" selected="True" type="V_String" size="2147483647" />
+            <SelectField field="live_in_canada" selected="True" type="V_String" size="2147483647" />
+            <SelectField field="most_recent_checking_account_experience" selected="True" type="V_String" size="2147483647" />
+            <SelectField field="Region" selected="True" type="V_String" size="2147483647" />
+            <SelectField field="Resp_Age_Category" selected="True" type="V_String" size="2147483647" />
+            <SelectField field="Source_customer_tenure" selected="True" type="V_String" size="2147483647" />
+            <SelectField field="Source_household_income" selected="True" type="V_String" size="2147483647" />
+            <SelectField field="*Unknown" selected="True" />
+          </SelectFields>
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText />
+          <Left value="False" />
+        </Annotation>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxSelect" />
+    </Node>
+    <Node ToolID="201">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.Sample.Sample">
+        <Position x="6486" y="1002" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <Mode>First</Mode>
+          <N>1</N>
+          <GroupFields orderChanged="False" />
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText>First 1 rows</DefaultAnnotationText>
+          <Left value="False" />
+        </Annotation>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxSample" />
+    </Node>
+    <Node ToolID="202">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.Filter.Filter">
+        <Position x="6990" y="558" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <Mode>Simple</Mode>
+          <Simple>
+            <Operator>IsNotNull</Operator>
+            <Field>uuid</Field>
+            <Operands>
+              <IgnoreTimeInDateTime>True</IgnoreTimeInDateTime>
+              <DateType>fixed</DateType>
+              <PeriodDate>2026-01-13 12:44:01</PeriodDate>
+              <PeriodType>
+              </PeriodType>
+              <PeriodCount>0</PeriodCount>
+              <Operand>
+              </Operand>
+              <StartDate>2026-01-13 12:44:01</StartDate>
+              <EndDate>2026-01-13 12:44:01</EndDate>
+            </Operands>
+          </Simple>
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText>!IsNull([uuid])</DefaultAnnotationText>
+          <Left value="False" />
+        </Annotation>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxFilter" />
+    </Node>
+    <Node ToolID="203">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.Union.Union">
+        <Position x="6606" y="810" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <ByName_ErrorMode>Warning</ByName_ErrorMode>
+          <ByName_OutputMode>All</ByName_OutputMode>
+          <Mode>ByName</Mode>
+          <SetOutputOrder value="False" />
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText />
+          <Left value="False" />
+        </Annotation>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxUnion" />
+    </Node>
+    <Node ToolID="204">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.AlteryxSelect.AlteryxSelect">
+        <Position x="6702" y="810" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <OrderChanged value="True" />
+          <CommaDecimal value="False" />
+          <SelectFields>
+            <SelectField field="episode_name" selected="True" />
+            <SelectField field="household_income" selected="True" />
+            <SelectField field="initial_channel_category" selected="True" />
+            <SelectField field="liquid_investible_assets" selected="True" />
+            <SelectField field="live_in_canada" selected="True" />
+            <SelectField field="most_recent_checking_account_experience" selected="True" />
+            <SelectField field="period" selected="True" />
+            <SelectField field="product_name" selected="True" />
+            <SelectField field="region" selected="True" />
+            <SelectField field="Resp Age Category" selected="True" />
+            <SelectField field="Resp_Age_Category" selected="True" />
+            <SelectField field="scenario" selected="True" />
+            <SelectField field="Source_customer_tenure" selected="True" />
+            <SelectField field="Source_household_income" selected="True" />
+            <SelectField field="txt_question_long_prefix (group)" selected="True" />
+            <SelectField field="*Unknown" selected="True" />
+          </SelectFields>
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText />
+          <Left value="False" />
+        </Annotation>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxSelect" />
+    </Node>
+    <Node ToolID="215">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.Join.Join">
+        <Position x="9078" y="558" />
+      </GuiSettings>
+      <Properties>
+        <Configuration joinByRecordPos="False">
+          <JoinInfo connection="Left">
+            <Field field="scenario" />
+            <Field field="CV.SurvBank.143.1.1" />
+            <Field field="Question Detail Product" />
+            <Field field="Episode DD Completion" />
+          </JoinInfo>
+          <JoinInfo connection="Right">
+            <Field field="scenario" />
+            <Field field="CV.SurvBank.143.1.1" />
+            <Field field="Question Detail Product" />
+            <Field field="Episode DD Completion" />
+          </JoinInfo>
+          <SelectConfiguration>
+            <Configuration outputConnection="Join">
+              <OrderChanged value="False" />
+              <CommaDecimal value="False" />
+              <SelectFields>
+                <SelectField field="Right_scenario" selected="True" rename="Right_scenario" input="Right_" />
+                <SelectField field="Right_CV.SurvBank.143.1.1" selected="True" rename="Right_CV.SurvBank.143.1.1" input="Right_" />
+                <SelectField field="Right_Question Detail Product" selected="True" rename="Right_Question Detail Product" input="Right_" />
+                <SelectField field="Right_Episode DD Completion" selected="True" rename="Right_Episode DD Completion" input="Right_" />
+                <SelectField field="Right_Question" selected="True" rename="Right_Question" input="Right_" />
+                <SelectField field="Right_Sum_Promoter" selected="True" rename="Right_Sum_Promoter" input="Right_" />
+                <SelectField field="Right_Sum_Passive" selected="True" rename="Right_Sum_Passive" input="Right_" />
+                <SelectField field="Right_Sum_Detractor" selected="True" rename="Right_Sum_Detractor" input="Right_" />
+                <SelectField field="Right_Total_N" selected="True" rename="Right_Total_N" input="Right_" />
+                <SelectField field="*Unknown" selected="True" />
+              </SelectFields>
+            </Configuration>
+          </SelectConfiguration>
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText />
+          <Left value="False" />
+        </Annotation>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxJoin" />
+    </Node>
+    <Node ToolID="216">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.BrowseV2.BrowseV2">
+        <Position x="2946" y="954" />
+      </GuiSettings>
+      <Properties>
+        <Configuration />
         <Annotation DisplayMode="0">
           <Name />
           <DefaultAnnotationText />
@@ -28445,7 +28781,7 @@ Promoter_% = [Sum_Promote...</DefaultAnnotationText>
           </GuiSettings>
           <Properties>
             <Configuration>
-              <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_37076_8e979a73ad0f4e79934fec16ab0cb6f2_\Engine_37076_467b9a8b0e7b4e9f91afda8a763e0a49~.yxdb</TempFile>
+              <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_8636_548b570b7b2d43e6a66a89f860ea3ddb_\Engine_8636_3e982129acfb45b385c781601e6f6ba2~.yxdb</TempFile>
               <TempFileDataProfiling />
               <Layout>
                 <ViewMode>Single</ViewMode>
@@ -28619,13 +28955,13 @@ Promoter_% = [Sum_Promote...</DefaultAnnotationText>
           <Properties>
             <Configuration>
               <FormulaFields>
-                <FormulaField expression="Round(100*([N]/[Total N]),0.00001)" field="%_round" size="1073741823" type="V_WString" />
+                <FormulaField expression="100*([N]/[Total N])" field="%_round" size="1073741823" type="V_WString" />
                 <FormulaField expression="([N]/[Total N])" field="%" size="1073741823" type="V_WString" enabled="true" />
               </FormulaFields>
             </Configuration>
             <Annotation DisplayMode="0">
               <Name />
-              <DefaultAnnotationText><![CDATA[%_round = Round(100*([N]/[Total N]),0.00001)
+              <DefaultAnnotationText><![CDATA[%_round = 100*([N]/[Total N])
 % = ([N]/[Total N])
 ]]></DefaultAnnotationText>
               <Left value="False" />
@@ -28639,7 +28975,7 @@ Promoter_% = [Sum_Promote...</DefaultAnnotationText>
           </GuiSettings>
           <Properties>
             <Configuration>
-              <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_37076_8e979a73ad0f4e79934fec16ab0cb6f2_\Engine_37076_49b63350aee54ca0a65034f96f0c3dde~.yxdb</TempFile>
+              <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_8636_548b570b7b2d43e6a66a89f860ea3ddb_\Engine_8636_af96adebcf1c4628a97658544f2230bb~.yxdb</TempFile>
               <TempFileDataProfiling />
               <Layout>
                 <ViewMode>Single</ViewMode>
@@ -29112,7 +29448,7 @@ Contains ([name], "Survey_bank") OR
 
 [Name] = "Q24.17.1.1" OR //household income
 [Name] = "Q25.18.1.1" OR //Liquid Investible Assets
-[Name] = "Q30.23.0.1"  OR
+[Name] = "Q30.23.0.1"  OR //total amount spent in ccs
 [name] = "hage" OR
 Contains ([name], "Q16.11.0.1") 
 ]]></Expression>
@@ -29243,6 +29579,257 @@ Contains ([name], "Q435.185.0.1") //live in canada</Expression>
             </Annotation>
           </Properties>
           <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxSelect" />
+        </Node>
+      </ChildNodes>
+    </Node>
+    <Node ToolID="209">
+      <GuiSettings Plugin="AlteryxGuiToolkit.ToolContainer.ToolContainer">
+        <Position x="7565" y="1217" width="524" height="240" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <Caption>OVERALL</Caption>
+          <Style TextColor="#314c4a" FillColor="#ecf2f2" BorderColor="#314c4a" Transparency="25" Margin="25" />
+          <Disabled value="False" />
+          <Folded value="False" />
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText />
+          <Left value="False" />
+        </Annotation>
+      </Properties>
+      <ChildNodes>
+        <Node ToolID="205">
+          <GuiSettings Plugin="AlteryxBasePluginsGui.CrossTab.CrossTab">
+            <Position x="7758" y="1266" />
+          </GuiSettings>
+          <Properties>
+            <Configuration>
+              <GroupFields>
+                <Field field="scenario" />
+                <Field field="CV.SurvBank.143.1.1" />
+                <Field field="Question Detail Product" />
+                <Field field="Episode DD Completion" />
+                <Field field="Question" />
+              </GroupFields>
+              <HeaderField field="eNPS Category" />
+              <DataField field="CountDistinct_uuid" />
+              <Methods>
+                <Method method="Sum" />
+              </Methods>
+              <RetainSpecChars value="False" />
+            </Configuration>
+            <Annotation DisplayMode="0">
+              <Name />
+              <DefaultAnnotationText />
+              <Left value="False" />
+            </Annotation>
+            <MetaInfo connection="Output">
+              <RecordInfo>
+                <Field name="scenario" size="254" source="CrossTab:Group:Sum:" type="V_String" />
+                <Field description="CV.SurvBank.143.1.1: Hidden punch for survey Bank." name="CV.SurvBank.143.1.1" size="33" source="CrossTab:Group:Sum:" type="V_WString" />
+                <Field name="Question Detail Product" size="255" source="CrossTab:Group:Sum:" type="V_String" />
+                <Field name="Episode DD Completion" size="255" source="CrossTab:Group:Sum:" type="V_String" />
+                <Field name="Question" size="1073741823" source="CrossTab:Group:Sum:" type="V_WString" />
+                <Field name="Detractor" source="CrossTab:Header:eNPS Category:Detractor:Sum:" type="Int64" />
+                <Field name="Passive" source="CrossTab:Header:eNPS Category:Passive:Sum:" type="Int64" />
+                <Field name="Promoter" source="CrossTab:Header:eNPS Category:Promoter:Sum:" type="Int64" />
+              </RecordInfo>
+            </MetaInfo>
+          </Properties>
+          <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxCrossTab" />
+        </Node>
+        <Node ToolID="206">
+          <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
+            <Position x="7638" y="1266" />
+          </GuiSettings>
+          <Properties>
+            <Configuration>
+              <SummarizeFields>
+                <SummarizeField field="scenario" action="GroupBy" rename="scenario" />
+                <SummarizeField field="CV.SurvBank.143.1.1" action="GroupBy" rename="CV.SurvBank.143.1.1" />
+                <SummarizeField field="Question Detail Product" action="GroupBy" rename="Question Detail Product" />
+                <SummarizeField field="Episode DD Completion" action="GroupBy" rename="Episode DD Completion" />
+                <SummarizeField field="Question" action="GroupBy" rename="Question" />
+                <SummarizeField field="eNPS Category" action="GroupBy" rename="eNPS Category" />
+                <SummarizeField field="uuid" action="Count" rename="Count" />
+                <SummarizeField field="uuid" action="CountDistinct" rename="CountDistinct_uuid" />
+              </SummarizeFields>
+            </Configuration>
+            <Annotation DisplayMode="0">
+              <Name />
+              <DefaultAnnotationText />
+              <Left value="False" />
+            </Annotation>
+          </Properties>
+          <EngineSettings EngineDll="AlteryxSpatialPluginsEngine.dll" EngineDllEntryPoint="AlteryxSummarize" />
+        </Node>
+        <Node ToolID="207">
+          <GuiSettings Plugin="AlteryxBasePluginsGui.MultiFieldFormula.MultiFieldFormula">
+            <Position x="7962" y="1266" />
+          </GuiSettings>
+          <Properties>
+            <Configuration>
+              <FieldType>Numeric</FieldType>
+              <Fields orderChanged="False">
+                <Field name="*Unknown" />
+              </Fields>
+              <CopyOutput value="False" />
+              <Expression>if isNull([_CurrentField_]) then
+	0
+else
+	[_CurrentField_]
+endif</Expression>
+              <ChangeFieldType value="False" />
+            </Configuration>
+            <Annotation DisplayMode="0">
+              <Name />
+              <DefaultAnnotationText>if isNull([_CurrentField_]) then
+	0
+else
+	[_CurrentField_]
+endif</DefaultAnnotationText>
+              <Left value="False" />
+            </Annotation>
+          </Properties>
+          <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxMultiFieldFormula" />
+        </Node>
+        <Node ToolID="208">
+          <GuiSettings Plugin="AlteryxGuiToolkit.TextBox.TextBox">
+            <Position x="7590" y="1362" width="252" height="60" />
+          </GuiSettings>
+          <Properties>
+            <Configuration>
+              <Text>Mergind Episode Initial Channel and eNPS data</Text>
+              <Font name="Arial" size="12" style="0" />
+              <TextColor name="Black" />
+              <FillColor r="128" g="255" b="255" />
+              <Shape shape="0" />
+              <Justification Justification="1" />
+            </Configuration>
+            <Annotation DisplayMode="0">
+              <Name />
+              <DefaultAnnotationText />
+              <Left value="False" />
+            </Annotation>
+          </Properties>
+        </Node>
+      </ChildNodes>
+    </Node>
+    <Node ToolID="214">
+      <GuiSettings Plugin="AlteryxGuiToolkit.ToolContainer.ToolContainer">
+        <Position x="8213" y="1157" width="578" height="302" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <Caption>eNPS for DD</Caption>
+          <Style TextColor="#314c4a" FillColor="#ffff80" BorderColor="#314c4a" Transparency="25" Margin="25" />
+          <Disabled value="False" />
+          <Folded value="False" />
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText />
+          <Left value="False" />
+        </Annotation>
+      </Properties>
+      <ChildNodes>
+        <Node ToolID="210">
+          <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
+            <Position x="8238" y="1266" />
+          </GuiSettings>
+          <Properties>
+            <Configuration>
+              <SummarizeFields>
+                <SummarizeField field="scenario" action="GroupBy" rename="scenario" />
+                <SummarizeField field="CV.SurvBank.143.1.1" action="GroupBy" rename="CV.SurvBank.143.1.1" />
+                <SummarizeField field="Question Detail Product" action="GroupBy" rename="Question Detail Product" />
+                <SummarizeField field="Episode DD Completion" action="GroupBy" rename="Episode DD Completion" />
+                <SummarizeField field="Question" action="GroupBy" rename="Question" />
+                <SummarizeField field="Promoter" action="Sum" rename="Sum_Promoter" />
+                <SummarizeField field="Passive" action="Sum" rename="Sum_Passive" />
+                <SummarizeField field="Detractor" action="Sum" rename="Sum_Detractor" />
+              </SummarizeFields>
+            </Configuration>
+            <Annotation DisplayMode="0">
+              <Name />
+              <DefaultAnnotationText />
+              <Left value="False" />
+            </Annotation>
+          </Properties>
+          <EngineSettings EngineDll="AlteryxSpatialPluginsEngine.dll" EngineDllEntryPoint="AlteryxSummarize" />
+        </Node>
+        <Node ToolID="211">
+          <GuiSettings Plugin="AlteryxBasePluginsGui.Formula.Formula">
+            <Position x="8370" y="1266" />
+          </GuiSettings>
+          <Properties>
+            <Configuration>
+              <FormulaFields>
+                <FormulaField expression="[Sum_Promoter]+[Sum_Detractor]+[Sum_Passive]" field="Total_N" size="4" type="Int32" />
+                <FormulaField expression="[Sum_Promoter]/[Total_N]" field="Promoter_%_prov" size="4" type="Float" />
+                <FormulaField expression="[Sum_Passive]/[Total_N]" field="Passive_%_prov" size="4" type="Float" />
+                <FormulaField expression="[Sum_Detractor]/[Total_N]" field="Detractor_%_prov" size="4" type="Float" />
+                <FormulaField expression="100*([Sum_Promoter]-[Sum_Detractor])/[Total_N]" field="NPS_prov" size="4" type="Float" />
+              </FormulaFields>
+            </Configuration>
+            <Annotation DisplayMode="0">
+              <Name />
+              <DefaultAnnotationText>Total_N = [Sum_Promoter]+[Sum_Detractor]+[Sum_Passive]
+Promoter_%_prov = [Sum_Pr...</DefaultAnnotationText>
+              <Left value="False" />
+            </Annotation>
+          </Properties>
+          <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxFormula" />
+        </Node>
+        <Node ToolID="212">
+          <GuiSettings Plugin="AlteryxBasePluginsGui.BrowseV2.BrowseV2">
+            <Position x="8490" y="1206" />
+          </GuiSettings>
+          <Properties>
+            <Configuration>
+              <TempFile>C:\Users\57948\AppData\Local\Temp\Alteryx\Engine_8636_548b570b7b2d43e6a66a89f860ea3ddb_\Engine_8636_82760770a2e441c5954fb9a82eadd3db~.yxdb</TempFile>
+              <TempFileDataProfiling />
+              <Layout>
+                <ViewMode>Single</ViewMode>
+                <ViewSize value="100" />
+                <View1>
+                  <DefaultTab>Profile</DefaultTab>
+                  <Hints>
+                    <Table />
+                  </Hints>
+                </View1>
+                <View2 />
+              </Layout>
+            </Configuration>
+            <Annotation DisplayMode="0">
+              <Name />
+              <DefaultAnnotationText />
+              <Left value="False" />
+            </Annotation>
+          </Properties>
+          <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxBrowseV2" />
+        </Node>
+        <Node ToolID="213">
+          <GuiSettings Plugin="AlteryxGuiToolkit.TextBox.TextBox">
+            <Position x="8502" y="1350" width="264" height="84" />
+          </GuiSettings>
+          <Properties>
+            <Configuration>
+              <Text>eNPS Check</Text>
+              <Font name="Arial" size="18" style="0" />
+              <TextColor name="Black" />
+              <FillColor name="White" />
+              <Shape shape="0" />
+              <Justification Justification="1" />
+            </Configuration>
+            <Annotation DisplayMode="0">
+              <Name />
+              <DefaultAnnotationText />
+              <Left value="False" />
+            </Annotation>
+          </Properties>
         </Node>
       </ChildNodes>
     </Node>
@@ -29425,6 +30012,10 @@ Contains ([name], "Q435.185.0.1") //live in canada</Expression>
       <Destination ToolID="67" Connection="Input" />
     </Connection>
     <Connection>
+      <Origin ToolID="37" Connection="Output" />
+      <Destination ToolID="216" Connection="Input" />
+    </Connection>
+    <Connection>
       <Origin ToolID="45" Connection="Output" />
       <Destination ToolID="36" Connection="Input" />
     </Connection>
@@ -29509,6 +30100,10 @@ Contains ([name], "Q435.185.0.1") //live in canada</Expression>
       <Destination ToolID="168" Connection="Source" />
     </Connection>
     <Connection>
+      <Origin ToolID="72" Connection="Left" />
+      <Destination ToolID="195" Connection="Input" />
+    </Connection>
+    <Connection>
       <Origin ToolID="74" Connection="Output" />
       <Destination ToolID="75" Connection="Input" />
     </Connection>
@@ -29534,7 +30129,7 @@ Contains ([name], "Q435.185.0.1") //live in canada</Expression>
     </Connection>
     <Connection>
       <Origin ToolID="102" Connection="Output" />
-      <Destination ToolID="164" Connection="Input" />
+      <Destination ToolID="202" Connection="Input" />
     </Connection>
     <Connection>
       <Origin ToolID="103" Connection="True" />
@@ -29557,6 +30152,10 @@ Contains ([name], "Q435.185.0.1") //live in canada</Expression>
       <Destination ToolID="189" Connection="Input" />
     </Connection>
     <Connection>
+      <Origin ToolID="103" Connection="True" />
+      <Destination ToolID="206" Connection="Input" />
+    </Connection>
+    <Connection>
       <Origin ToolID="110" Connection="Output" />
       <Destination ToolID="111" Connection="Input" />
     </Connection>
@@ -29574,11 +30173,11 @@ Contains ([name], "Q435.185.0.1") //live in canada</Expression>
     </Connection>
     <Connection>
       <Origin ToolID="141" Connection="Output" />
-      <Destination ToolID="170" Connection="Input" />
+      <Destination ToolID="215" Connection="Left" />
     </Connection>
     <Connection>
-      <Origin ToolID="141" Connection="Output" />
-      <Destination ToolID="185" Connection="Input" />
+      <Origin ToolID="211" Connection="Output" />
+      <Destination ToolID="215" Connection="Right" />
     </Connection>
     <Connection>
       <Origin ToolID="144" Connection="Join" />
@@ -29756,9 +30355,13 @@ Contains ([name], "Q435.185.0.1") //live in canada</Expression>
       <Origin ToolID="187" Connection="False" />
       <Destination ToolID="194" Connection="Input" />
     </Connection>
-    <Connection>
+    <Connection name="#1">
       <Origin ToolID="190" Connection="Output" />
-      <Destination ToolID="166" Connection="Input" />
+      <Destination ToolID="203" Connection="Input" />
+    </Connection>
+    <Connection name="#2">
+      <Origin ToolID="201" Connection="Output" />
+      <Destination ToolID="203" Connection="Input" />
     </Connection>
     <Connection>
       <Origin ToolID="192" Connection="Output" />
@@ -29767,6 +30370,38 @@ Contains ([name], "Q435.185.0.1") //live in canada</Expression>
     <Connection>
       <Origin ToolID="193" Connection="Output" />
       <Destination ToolID="192" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="196" Connection="Output" />
+      <Destination ToolID="198" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="198" Connection="Output" />
+      <Destination ToolID="200" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="200" Connection="Output" />
+      <Destination ToolID="201" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="202" Connection="True" />
+      <Destination ToolID="164" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="203" Connection="Output" />
+      <Destination ToolID="204" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="204" Connection="Output" />
+      <Destination ToolID="166" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="215" Connection="Join" />
+      <Destination ToolID="170" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="215" Connection="Join" />
+      <Destination ToolID="185" Connection="Input" />
     </Connection>
     <Connection>
       <Origin ToolID="121" Connection="Output" />
@@ -29855,6 +30490,26 @@ Contains ([name], "Q435.185.0.1") //live in canada</Expression>
     <Connection>
       <Origin ToolID="95" Connection="Output" />
       <Destination ToolID="97" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="205" Connection="Output" />
+      <Destination ToolID="207" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="206" Connection="Output" />
+      <Destination ToolID="205" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="207" Connection="Output" />
+      <Destination ToolID="210" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="210" Connection="Output" />
+      <Destination ToolID="211" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="211" Connection="Output" />
+      <Destination ToolID="212" Connection="Input" />
     </Connection>
   </Connections>
   <Properties>

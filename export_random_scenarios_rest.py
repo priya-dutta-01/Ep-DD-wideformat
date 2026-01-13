@@ -91,7 +91,7 @@ class EpisodeDeepDiveModule(DashboardModule):
             )
 
     def build_attempt_fixed_filters(self, rng: random.Random) -> Dict[str, List[str]]:
-        fixed: Dict[str, List[str]] = {self.PERIOD_FIELD: ["Q1 2026"]}
+        fixed: Dict[str, List[str]] = {self.PERIOD_FIELD: ["Q1 2025"]}
 
         (product, question_long) = rng.choice(list(self.combo_pool.keys()))
         episodes = self.combo_pool[(product, question_long)] or []

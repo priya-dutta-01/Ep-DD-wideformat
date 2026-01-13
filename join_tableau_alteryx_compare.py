@@ -62,16 +62,41 @@ def _safe_flag_name(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9_]+", "_", str(s)).strip("_")
 
 
-def _is_numeric_series(s: pd.Series) -> bool:
+def _clean_and_round_series(s: pd.Series, dp: int) -> pd.Series:
+    """
+    Cleans numeric-like strings before rounding:
+      - removes '%' if present
+      - removes commas
+      - coerces to numeric
+      - rounds to dp
+    Works even if some rows are plain numerics and some are strings like "12.3%".
+    """
     if s is None:
-        return False
-    if pd.api.types.is_numeric_dtype(s):
-        return True
-    return pd.to_numeric(s, errors="coerce").notna().any()
+        return s
+
+    s2 = s.astype(str)
+
+    s2 = (
+        s2.str.replace("%", "", regex=False)
+          .str.replace(",", "", regex=False)
+          .str.strip()
+    )
+
+    num = pd.to_numeric(s2, errors="coerce")
+    return num.round(dp)
 
 
-def _round_series(s: pd.Series, dp: int) -> pd.Series:
-    return pd.to_numeric(s, errors="coerce").round(dp)
+def _try_numeric_for_sort(s: pd.Series) -> pd.Series:
+    """
+    For sorting: if a column looks numeric-ish, sort numerically; else lexicographically.
+    Keeps NaN at the end by default behavior in pandas.
+    """
+    if s is None:
+        return s
+    coerced = pd.to_numeric(s, errors="coerce")
+    if coerced.notna().any():
+        return coerced
+    return s.astype(str)
 
 
 # ============================================================
@@ -134,13 +159,12 @@ def _pairs_for_sheet(mtab: pd.DataFrame):
         if (r["is_join_key"] == "Y") or (r["compare"] == "Y") or (r.get("include_in_output", "") == "Y"):
             keep_pairs.append(pair)
 
-        # If you want rounding later, uncomment:
-        # dp = str(r.get("round_dp", "")).strip()
-        # if dp:
-        #     try:
-        #         round_map[pair] = int(float(dp))
-        #     except:
-        #         pass
+        dp = str(r.get("round_dp", "")).strip()
+        if dp and dp.lower() != "nan":
+            try:
+                round_map[pair] = int(float(dp))
+            except Exception:
+                pass
 
     def dedup(xs):
         out, seen = [], set()
@@ -163,10 +187,6 @@ def _pairs_for_sheet(mtab: pd.DataFrame):
 
 
 def _get_alteryx_col_for_tableau_field(mapping: pd.DataFrame, tableau_field: str) -> Optional[str]:
-    """
-    Looks up mapping where mapping['column name'] == tableau_field (case-insensitive),
-    returns the FIRST matching alteryx_column_name (trimmed).
-    """
     tf = tableau_field.strip().lower()
     m2 = mapping.copy()
     m2["__col_lc"] = m2["column name"].astype(str).str.strip().str.lower()
@@ -181,13 +201,6 @@ def _get_alteryx_col_for_tableau_field(mapping: pd.DataFrame, tableau_field: str
 # ============================================================
 
 def _build_filter_selection_from_scenarios(scen: pd.DataFrame) -> pd.DataFrame:
-    """
-    scenario_wide_exploded.csv is exploded (multiple rows per provider+scenario).
-    Build ONE filter_selection per (provider, scenario) by aggregating unique values per filter column.
-
-    Output columns:
-      scen_provider, scen_scenario, filter_selection_from_scen
-    """
     scen = _std_cols(scen)
 
     required = {"provider", "scenario"}
@@ -235,14 +248,6 @@ def _attach_filter_selection_from_scenarios(
     provider_alteryx_col: str,
     scenario_alteryx_col: str,
 ) -> pd.DataFrame:
-    """
-    Join scenario context to Alteryx using (provider_alteryx_col, scenario_alteryx_col),
-    then fill/create alteryx_df.filter_selection where blank/NA.
-
-    IMPORTANT:
-    - Does NOT rename/drop your Alteryx columns (so mapping continues to work)
-    - Does NOT drop Alteryx scenario
-    """
     scen_raw = pd.read_csv(SCENARIO_CSV)
     scen_key = _build_filter_selection_from_scenarios(scen_raw)
 
@@ -260,7 +265,6 @@ def _attach_filter_selection_from_scenarios(
         how="left",
     )
 
-    # Fill/create filter_selection
     if "filter_selection" not in out.columns:
         out["filter_selection"] = pd.NA
 
@@ -272,27 +276,113 @@ def _attach_filter_selection_from_scenarios(
 
 
 # ============================================================
-# Output formatting
+# Output formatting (match highlighting)
 # ============================================================
 
-def format_match_headers_green(xlsx_path: Path):
+def format_match_cells_true_false(xlsx_path: Path):
+    """
+    In every *__detail sheet:
+      - TRUE cells in __match columns => green
+      - FALSE cells in __match columns => red
+    """
     wb = load_workbook(xlsx_path)
 
-    green_fill = PatternFill(
-        start_color="C6EFCE",
-        end_color="C6EFCE",
-        fill_type="solid",
-    )
+    green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+    red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
 
     for ws in wb.worksheets:
         if not ws.title.endswith("__detail"):
             continue
 
-        for cell in ws[1]:  # header row
+        # Find __match columns by header
+        match_col_idxs = []
+        for c_idx, cell in enumerate(ws[1], start=1):
             if isinstance(cell.value, str) and cell.value.endswith("__match"):
-                cell.fill = green_fill
+                match_col_idxs.append(c_idx)
+
+        if not match_col_idxs:
+            continue
+
+        # Apply fill row-by-row
+        for row in ws.iter_rows(min_row=2):
+            for c_idx in match_col_idxs:
+                cell = row[c_idx - 1]
+                v = cell.value
+                if v is True or (isinstance(v, str) and v.strip().upper() == "TRUE"):
+                    cell.fill = green_fill
+                elif v is False or (isinstance(v, str) and v.strip().upper() == "FALSE"):
+                    cell.fill = red_fill
 
     wb.save(xlsx_path)
+
+
+# ============================================================
+# Sorting detail output
+# ============================================================
+
+def _pick_first_existing(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
+
+
+def _sort_detail(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Sort order (ASC), highest priority first:
+      1) scenario__tableau
+      2) scenario__alteryx
+      3) provider
+      4) CV.SurvBank.143.1.1
+    """
+
+    scen_t_col = _pick_first_existing(
+        df, ["scenario__tableau", "scenario_tableau", "scenario"]
+    )
+    scen_a_col = _pick_first_existing(
+        df, ["scenario__alteryx", "scenario_alteryx"]
+    )
+    provider_col = _pick_first_existing(
+        df, ["provider", "provider__alteryx", "provider__tableau",
+             "survey_provider", "comparison_provider"]
+    )
+    cv_col = _pick_first_existing(
+        df, ["CV.SurvBank.143.1.1",
+             "CV.SurvBank.143.1.1__alteryx",
+             "CV.SurvBank.143.1.1__tableau"]
+    )
+
+    sort_cols = []
+    if scen_t_col:
+        sort_cols.append(scen_t_col)
+    if scen_a_col and scen_a_col not in sort_cols:
+        sort_cols.append(scen_a_col)
+    if provider_col and provider_col not in sort_cols:
+        sort_cols.append(provider_col)
+    if cv_col and cv_col not in sort_cols:
+        sort_cols.append(cv_col)
+
+    if not sort_cols:
+        return df
+
+    df2 = df.copy()
+
+    # numeric-aware sorting
+    tmp_cols = []
+    for i, c in enumerate(sort_cols):
+        tmp = f"__sortkey_{i}"
+        df2[tmp] = _try_numeric_for_sort(df2[c])
+        tmp_cols.append(tmp)
+
+    df2 = df2.sort_values(
+        by=tmp_cols,
+        ascending=True,
+        kind="mergesort"   # stable sort
+    )
+
+    df2 = df2.drop(columns=tmp_cols, errors="ignore")
+    return df2.reset_index(drop=True)
+
 
 
 # ============================================================
@@ -309,12 +399,10 @@ def main():
     provider_alteryx_col = _get_alteryx_col_for_tableau_field(mapping, "provider")
     scenario_alteryx_col = _get_alteryx_col_for_tableau_field(mapping, "scenario")
 
-    # If scenario isn't mapped, assume the Alteryx column is literally named "scenario"
     if scenario_alteryx_col is None:
         scenario_alteryx_col = "scenario"
 
     if provider_alteryx_col is None:
-        # Show a helpful hint: list a few columns that look like provider
         hint = [c for c in alteryx_df.columns if "prov" in c.lower() or "bank" in c.lower()][:20]
         raise ValueError(
             "Could not find Tableau field 'provider' in mapping file (column name = provider). "
@@ -328,9 +416,6 @@ def main():
         provider_alteryx_col=provider_alteryx_col,
         scenario_alteryx_col=scenario_alteryx_col,
     )
-
-    all_merge_summary = []
-    all_field_summary = []
 
     with pd.ExcelWriter(OUTPUT_XLSX, engine="openpyxl") as writer:
         for sheet in sorted(mapping["sheet name"].unique()):
@@ -352,7 +437,6 @@ def main():
                 )
                 continue
 
-            # must exist both sides
             required_both = set(join_pairs) | set(cmp_pairs)
 
             missing_t = {t for (t, a) in required_both if t not in tab_df.columns}
@@ -372,7 +456,6 @@ def main():
             tab_join = tab_df.copy()
             alt_join = alteryx_df.copy()
 
-            # Build join keys
             jk_cols = []
             for i, (tcol, acol) in enumerate(join_pairs):
                 jk = f"__jk{i}"
@@ -380,7 +463,6 @@ def main():
                 alt_join[jk] = alt_join[acol]
                 jk_cols.append(jk)
 
-            # Outer merge
             merged = tab_join.merge(
                 alt_join,
                 on=jk_cols,
@@ -392,22 +474,17 @@ def main():
             def _blank(s):
                 return s.isna() | (s.astype(str).str.strip() == "")
 
-            # Pick the tableau filter selection col (it might be unsuffixed in some cases)
             fs_t_col = "filter_selection__tableau" if "filter_selection__tableau" in merged.columns else (
                 "filter_selection" if "filter_selection" in merged.columns else None
             )
-
-            # Also consider an alteryx-side filter selection if present
             fs_a_col = "filter_selection__alteryx" if "filter_selection__alteryx" in merged.columns else None
 
-            # Find scenario column
             sc_col = None
             for cand in ["scenario", "scenario__tableau", "scenario__alteryx"]:
                 if cand in merged.columns:
                     sc_col = cand
                     break
 
-            # Find provider column (optional)
             prov_col = None
             for cand in ["provider", "provider__tableau", "provider__alteryx", "survey_provider", "comparison_provider"]:
                 if cand in merged.columns:
@@ -415,7 +492,6 @@ def main():
                     break
 
             if fs_t_col and sc_col:
-                # Build a lookup from rows that DO have tableau filter_selection
                 src = merged.copy()
                 src_nonblank = src[~_blank(src[fs_t_col])]
 
@@ -426,15 +502,12 @@ def main():
                         .first()
                         .to_dict()
                     )
-
-                    # Fill tableau blanks using (provider, scenario) lookup
                     if "filter_selection__tableau" in merged.columns:
                         m = _blank(merged["filter_selection__tableau"])
                         merged.loc[m, "filter_selection__tableau"] = merged.loc[m].apply(
                             lambda r: lut.get((r.get(prov_col), r.get(sc_col))), axis=1
                         )
                 else:
-                    # Fallback: scenario-only lookup
                     lut = (
                         src_nonblank.groupby(sc_col)[fs_t_col]
                         .first()
@@ -444,7 +517,6 @@ def main():
                         m = _blank(merged["filter_selection__tableau"])
                         merged.loc[m, "filter_selection__tableau"] = merged.loc[m, sc_col].map(lut)
 
-                # Final fallback: if still blank, copy from alteryx-side filter_selection (if you created/populated it)
                 if "filter_selection__tableau" in merged.columns:
                     m2 = _blank(merged["filter_selection__tableau"])
                     if fs_a_col and fs_a_col in merged.columns:
@@ -452,13 +524,6 @@ def main():
                     elif "filter_selection" in merged.columns:
                         merged.loc[m2, "filter_selection__tableau"] = merged.loc[m2, "filter_selection"]
 
-
-            # ------------------------------------------------------------
-            # Fill blank filter_selection by scenario lookup within merged
-            # ------------------------------------------------------------
-
-            # 1) identify the scenario column that exists in merged
-            # prefer exact 'scenario', else try common suffix variants
             scenario_col = None
             for cand in ["scenario", "scenario__tableau", "scenario__alteryx"]:
                 if cand in merged.columns:
@@ -466,7 +531,6 @@ def main():
                     break
 
             if scenario_col and "filter_selection" in merged.columns:
-                # build a map: scenario -> first non-blank filter_selection found in merged
                 nonblank = merged[
                     merged["filter_selection"].notna()
                     & (merged["filter_selection"].astype(str).str.strip() != "")
@@ -478,20 +542,10 @@ def main():
                     .to_dict()
                 )
 
-                # fill blanks using that map
                 mask = merged["filter_selection"].isna() | (merged["filter_selection"].astype(str).str.strip() == "")
                 merged.loc[mask, "filter_selection"] = merged.loc[mask, scenario_col].map(scen_to_fs)
 
-
-            # Merge summary
-            ms = merged["_merge"].value_counts(dropna=False).rename_axis("_merge").reset_index(name="rows")
-            ms.insert(0, "sheet", sheet)
-            ms.to_excel(writer, sheet_name=_safe_sheet(sheet, "__merge_summary"), index=False)
-            all_merge_summary.append(ms)
-
-            # Field summary + match flags
-            fs_rows = []
-
+            # Field compare + match flags (NO SUMMARY SHEETS WRITTEN)
             for (tcol, acol) in cmp_pairs:
                 t_series = merged.get(tcol, merged.get(f"{tcol}__tableau"))
                 a_series = merged.get(acol, merged.get(f"{acol}__alteryx"))
@@ -502,9 +556,9 @@ def main():
                     a_series = pd.Series([None] * len(merged))
 
                 dp = round_map.get((tcol, acol))
-                if dp is not None and (_is_numeric_series(t_series) or _is_numeric_series(a_series)):
-                    t_cmp = _round_series(t_series, dp)
-                    a_cmp = _round_series(a_series, dp)
+                if dp is not None:
+                    t_cmp = _clean_and_round_series(t_series, dp)
+                    a_cmp = _clean_and_round_series(a_series, dp)
                 else:
                     t_cmp = t_series
                     a_cmp = a_series
@@ -516,28 +570,12 @@ def main():
                 flag_col = f"{_safe_flag_name(tcol)}__match"
                 merged[flag_col] = eq
 
-                mismatch_rows = int((eq == False).sum())  # noqa: E712
-
-                fs_rows.append({
-                    "sheet": sheet,
-                    "tableau_col": tcol,
-                    "alteryx_col": acol,
-                    "mismatch_rows(both_only)": mismatch_rows,
-                    "total_rows_in_merged": len(merged),
-                })
-
-            fs = pd.DataFrame(fs_rows)
-            fs.to_excel(writer, sheet_name=_safe_sheet(sheet, "__field_summary"), index=False)
-            all_field_summary.append(fs)
-
             # ---------------- DETAIL ----------------
             detail_cols: List[str] = []
 
-            # Always include filter_selection if present
             if "filter_selection" in merged.columns:
                 detail_cols.append("filter_selection")
 
-            # include join keys
             for (tcol, acol) in join_pairs:
                 if tcol in merged.columns:
                     detail_cols.append(tcol)
@@ -549,7 +587,6 @@ def main():
                 elif f"{acol}__alteryx" in merged.columns:
                     detail_cols.append(f"{acol}__alteryx")
 
-            # include compare cols + match flags
             for (tcol, acol) in cmp_pairs:
                 if tcol in merged.columns:
                     detail_cols.append(tcol)
@@ -565,7 +602,6 @@ def main():
                 if flag_col in merged.columns:
                     detail_cols.append(flag_col)
 
-            # include extra "include_in_output" pairs
             for (tcol, acol) in keep_pairs:
                 if (tcol, acol) in join_pairs or (tcol, acol) in cmp_pairs:
                     continue
@@ -580,7 +616,6 @@ def main():
                 elif f"{acol}__alteryx" in merged.columns and f"{acol}__alteryx" not in detail_cols:
                     detail_cols.append(f"{acol}__alteryx")
 
-            # de-dupe while preserving order
             seen = set()
             detail_cols = [c for c in detail_cols if not (c in seen or seen.add(c))]
 
@@ -588,18 +623,12 @@ def main():
             if len(detail) > DETAIL_ROW_CAP:
                 detail = detail.head(DETAIL_ROW_CAP)
 
-            detail.to_excel(writer, sheet_name=_safe_sheet(sheet, "__detail"), index=False)
+            # ✅ SORT as requested (ascending)
+            detail = _sort_detail(detail)
 
-        if all_merge_summary:
-            pd.concat(all_merge_summary, ignore_index=True).to_excel(
-                writer, sheet_name="ALL__merge_summary", index=False
-            )
-        if all_field_summary:
-            pd.concat(all_field_summary, ignore_index=True).to_excel(
-                writer, sheet_name="ALL__field_summary", index=False
-            )
+            detail.to_excel(writer, sheet_name=_safe_sheet(sheet, "__detail"), index=False)
 
 
 if __name__ == "__main__":
     main()
-    format_match_headers_green(OUTPUT_XLSX)
+    format_match_cells_true_false(OUTPUT_XLSX)
