@@ -9,6 +9,8 @@ import itertools
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Union
+
 
 import requests
 import pandas as pd
@@ -93,20 +95,19 @@ class EpisodeDeepDiveModule(DashboardModule):
     def build_attempt_fixed_filters(self, rng: random.Random) -> Dict[str, List[str]]:
         fixed: Dict[str, List[str]] = {self.PERIOD_FIELD: ["Q1 2025"]}
 
+        # Always pick exactly ONE product and ONE question
         (product, question_long) = rng.choice(list(self.combo_pool.keys()))
-        episodes = self.combo_pool[(product, question_long)] or []
+        episodes = self.combo_pool.get((product, question_long), []) or []
 
-        if not episodes:
-            chosen_eps: List[str] = []
-        else:
-            k = 2 if len(episodes) >= 2 and rng.choice([True, False]) else 1
-            chosen_eps = rng.sample(episodes, k=min(k, len(episodes)))
+        # Always pick exactly ONE episode (if none exist for the combo, reroll should handle empties)
+        chosen_ep = rng.choice(episodes) if episodes else ""
 
         fixed[self.PRODUCT_FIELD] = [product]
         fixed[self.QUESTION_FIELD] = [question_long]
-        fixed[self.EPISODE_FIELD] = chosen_eps
+        fixed[self.EPISODE_FIELD] = [chosen_ep] if chosen_ep else [""]
 
         return fixed
+
 
 
 def get_dashboard_module(
@@ -125,38 +126,21 @@ def get_dashboard_module(
 def normalize_view_name(sheet_name: str) -> str:
     return re.sub(r"[\s()]+", "", str(sheet_name)).strip()
 
-def smart_split_values(values_str: str) -> list[str]:
-    """
-    Split filter-values into list items while preserving commas inside numbers like $25,000.
-
-    Rules:
-      1) If we see delimiters like ", $..." (common for income ranges), split on comma+space before '$'
-      2) Otherwise split on commas that are NOT between digits (keeps 100,000 intact but splits 18-24, 25-34)
-    """
-    s = "" if values_str is None else str(values_str).strip()
-    if not s:
-        return []
-
-    # Case 1: delimiters are ", " followed by "$"
-    if re.search(r",\s+\$", s):
-        parts = re.split(r",\s+(?=\$)", s)
-    else:
-        # Case 2: original behavior
-        parts = re.split(r"(?<!\d),(?!\d)", s)
-
-    return [p.strip() for p in parts if p.strip()]
 
 
 def normalize_selected_values(vals: List[object]) -> List[object]:
     """
-    Fix issue:
-      if a selected value itself contains comma-separated items
-      (e.g. "18-24, 25-34, 35-44"),
-      expand it into multiple values so the WIDE explosion creates multiple rows.
+    Expand multi-select strings into individual member values.
 
-    Important: uses smart_split_values, so "$100,000" will NOT get split.
+    Source of truth:
+      - mapping_file filter values are pipe-delimited: A|B|C
+
+    Fallback:
+      - if no pipe is present, and there are commas, use parse_filter_values()'s fallback
+        (which avoids splitting inside numbers like 25,000)
     """
     out: List[object] = []
+
     for v in (vals or []):
         if v is None or (isinstance(v, float) and pd.isna(v)):
             continue
@@ -165,12 +149,19 @@ def normalize_selected_values(vals: List[object]) -> List[object]:
         if not s or s.lower() == "nan":
             continue
 
+        # Expand pipe-delimited values (your Excel format)
+        if "|" in s:
+            out.extend(parse_filter_values(s))
+            continue
+
+        # Otherwise, only expand on comma if it looks like a multi-list,
+        # NOT a single value that merely contains commas (e.g. "$25,000 to ...")
         if "," in s:
-            parts = smart_split_values(s)
+            parts = parse_filter_values(s)  # fallback handles digit-commas safely
             if len(parts) > 1:
                 out.extend(parts)
             else:
-                out.append(s)
+                out.append(parts[0] if parts else s)
         else:
             out.append(s)
 
@@ -184,14 +175,112 @@ def normalize_selected_values(vals: List[object]) -> List[object]:
 
     return uniq
 
+
 def format_filter_selection(selected_filters: dict[str, list[str]]) -> str:
     return "; ".join([f"{k}=[{'|'.join(map(str, v))}]" for k, v in selected_filters.items()])
 
+def _strip_outer_quotes(s: str) -> str:
+    if s is None:
+        return ""
+    s = str(s).strip()
+    if len(s) >= 2 and ((s[0] == '"' and s[-1] == '"') or (s[0] == "'" and s[-1] == "'")):
+        s = s[1:-1].strip()
+    s = s.replace('""', '"')
+    return s
+
+def parse_filter_values(values_str: str) -> list[str]:
+    """
+    Your mapping_file.xlsx stores filter values separated by '|'.
+    Use that as the source of truth.
+
+    Fallbacks:
+      - If no '|' present, fall back to splitting on commas NOT inside numbers.
+    """
+    s = "" if values_str is None else str(values_str).strip()
+    if not s:
+        return []
+
+    if "|" in s:
+        parts = [p.strip() for p in s.split("|")]
+    else:
+        # fallback: split commas not between digits (keeps 25,000 intact)
+        parts = [p.strip() for p in re.split(r"(?<!\d),(?!\d)", s)]
+
+    return [_strip_outer_quotes(p) for p in parts if p]
+
+
+def smart_split_values(values_str: str) -> list[str]:
+    """
+    Split filter-values into list items while preserving commas inside numbers like $25,000.
+
+    Rules:
+      1) If we see delimiters like ", $..." split on comma+space before '$'
+      2) Otherwise split on commas NOT between digits (keeps 100,000 intact)
+    Then strip any accidental outer quotes on each part.
+    """
+    s = "" if values_str is None else str(values_str).strip()
+    if not s:
+        return []
+
+    if re.search(r",\s+\$", s):
+        parts = re.split(r",\s+(?=\$)", s)
+    else:
+        parts = re.split(r"(?<!\d),(?!\d)", s)
+
+    cleaned = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        cleaned.append(_strip_outer_quotes(p))
+    return cleaned
+
+def vf_encode_value(v: str) -> str:
+    """
+    Tableau vf multi-select: one param with comma-separated members.
+    If a member contains comma(s), wrap it in double quotes.
+    """
+    s = _strip_outer_quotes(v)
+    if not s:
+        return ""
+    if ("," in s) or ('"' in s):
+        s = s.replace('"', '""')
+        s = f'"{s}"'
+    return s
+
+def build_vf_param_value(values: list[str]) -> str:
+    encoded = [vf_encode_value(v) for v in values if v is not None and str(v).strip() != ""]
+    encoded = [v for v in encoded if v]
+    return ",".join(encoded)
+
 def build_vf_params(selected_filters: dict[str, list[str]]) -> dict[str, str]:
+    """
+    Build Tableau vf params:
+      vf_field=value1,value2,value3
+    with correct quoting ONLY when needed.
+    """
     params: Dict[str, str] = {}
-    for field, vals in selected_filters.items():
-        params[f"vf_{field}"] = ",".join([str(x) for x in vals if x is not None])
+
+    for field, vals in (selected_filters or {}).items():
+        # Strip accidental quotes early, then encode for vf
+        clean_vals = []
+        for v in (vals or []):
+            if v is None:
+                continue
+            vv = _strip_outer_quotes(str(v).strip())
+            if vv:
+                clean_vals.append(vf_encode_value(vv))
+
+        clean_vals = [v for v in clean_vals if v]
+        if not clean_vals:
+            continue
+
+        params[f"vf_{field}"] = ",".join(clean_vals)
+
     return params
+
+
+
 
 def safe_name(s: str) -> str:
     return re.sub(r"[^\w\-]+", "_", str(s)).strip("_")
@@ -317,6 +406,8 @@ def fetch_with_retry_same_filters(
     for attempt in range(1, MAX_FETCH_ATTEMPTS + 1):
         try:
             vf_params = build_vf_params(final_filters)
+            print("VF PARAMS:", vf_params)
+
             df = query_view_data_csv(server_url, token, site_id, view_id, vf_params, api_ver=api_ver)
             if df is not None and not df.empty:
                 return df, attempt, True
@@ -642,11 +733,8 @@ def main():
     for _, row in filters_df.iterrows():
         fname = str(row["filter name"]).strip()
         vals_raw = row["filter values"]
-        vals = smart_split_values(vals_raw)
+        vals = parse_filter_values(row["filter values"])
 
-        # Also handle pipe-delimited values
-        if len(vals) == 1 and isinstance(vals_raw, str) and "|" in vals_raw:
-            vals = [p.strip() for p in str(vals_raw).split("|") if p.strip()]
 
         if fname and vals:
             global_filter_pool[fname] = vals
