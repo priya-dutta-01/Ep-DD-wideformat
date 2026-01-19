@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from typing import Dict, Tuple, List, Optional
+from typing import Dict, Tuple, List, Optional, Set
 
 import pandas as pd
 from openpyxl import load_workbook
@@ -24,7 +24,7 @@ ALTERYX_CSV = Path(
 )
 
 MAPPING_XLSX = Path(
-    r"C:\Users\57948\OneDrive - Bain\Documents\Ep-DD-wideformat\mapping_file.xlsx"
+    r"C:\Users\57948\OneDrive - Bain\Documents\Ep-DD-wideformat\US_B2C_mapping_file.xlsx"
 )
 
 MAPPING_SHEET = "dashboard_sheet_column_mapping"
@@ -97,6 +97,10 @@ def _try_numeric_for_sort(s: pd.Series) -> pd.Series:
     if coerced.notna().any():
         return coerced
     return s.astype(str)
+
+
+def _blank_series(s: pd.Series) -> pd.Series:
+    return s.isna() | (s.astype(str).str.strip() == "")
 
 
 # ============================================================
@@ -197,7 +201,7 @@ def _get_alteryx_col_for_tableau_field(mapping: pd.DataFrame, tableau_field: str
 
 
 # ============================================================
-# Scenario join to populate filter_selection
+# Scenario join to populate filter_selection (Alteryx)
 # ============================================================
 
 def _build_filter_selection_from_scenarios(scen: pd.DataFrame) -> pd.DataFrame:
@@ -268,7 +272,7 @@ def _attach_filter_selection_from_scenarios(
     if "filter_selection" not in out.columns:
         out["filter_selection"] = pd.NA
 
-    mask = out["filter_selection"].isna() | (out["filter_selection"].astype(str).str.strip() == "")
+    mask = _blank_series(out["filter_selection"])
     out.loc[mask, "filter_selection"] = out.loc[mask, "filter_selection_from_scen"]
 
     out = out.drop(columns=["scen_provider", "scen_scenario", "filter_selection_from_scen"], errors="ignore")
@@ -317,6 +321,86 @@ def format_match_cells_true_false(xlsx_path: Path):
 
 
 # ============================================================
+# Suffix enforcement: all Tableau -> _tab, all Alteryx -> _alt
+# ============================================================
+
+def _rename_first_existing(df: pd.DataFrame, candidates: List[str], new_name: str) -> None:
+    """
+    If any candidate exists, rename the first one found to new_name (unless already new_name).
+    """
+    for c in candidates:
+        if c in df.columns:
+            if c != new_name:
+                df.rename(columns={c: new_name}, inplace=True)
+            return
+
+
+def _enforce_tab_alt_suffixes(
+    merged: pd.DataFrame,
+    t_cols: Set[str],
+    a_cols: Set[str],
+) -> pd.DataFrame:
+    """
+    After merge:
+      - ensure each Tableau column ends with _tab
+      - ensure each Alteryx column ends with _alt
+    Works even when pandas doesn't suffix (because names don't overlap).
+    """
+    df = merged.copy()
+
+    # Tableau side
+    for t in sorted(t_cols):
+        if t.endswith("_tab") or t.endswith("_alt"):
+            continue
+        desired = f"{t}_tab"
+        cands = [desired, t, f"{t}__tableau", f"{t}__tab"]
+        _rename_first_existing(df, cands, desired)
+
+    # Alteryx side
+    for a in sorted(a_cols):
+        if a.endswith("_alt") or a.endswith("_tab"):
+            continue
+        desired = f"{a}_alt"
+        cands = [desired, a, f"{a}__alteryx", f"{a}__alt", f"{a}__raw"]
+        _rename_first_existing(df, cands, desired)
+
+    return df
+
+
+# ============================================================
+# One filter_selection column only
+# ============================================================
+
+def _coalesce_filter_selection_one_col(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create ONE filter_selection column:
+      - prefer filter_selection_tab when non-blank
+      - otherwise use filter_selection_alt
+    Then drop the *_tab and *_alt versions.
+    """
+    out = df.copy()
+
+    tab_col = "filter_selection_tab" if "filter_selection_tab" in out.columns else None
+    alt_col = "filter_selection_alt" if "filter_selection_alt" in out.columns else None
+
+    if tab_col or alt_col:
+        out["filter_selection"] = pd.NA
+
+        if tab_col:
+            m_tab = ~_blank_series(out[tab_col])
+            out.loc[m_tab, "filter_selection"] = out.loc[m_tab, tab_col]
+
+        if alt_col:
+            m_need = _blank_series(out["filter_selection"])
+            m_alt = ~_blank_series(out[alt_col])
+            out.loc[m_need & m_alt, "filter_selection"] = out.loc[m_need & m_alt, alt_col]
+
+        out = out.drop(columns=[c for c in [tab_col, alt_col] if c], errors="ignore")
+
+    return out
+
+
+# ============================================================
 # Sorting detail output
 # ============================================================
 
@@ -330,26 +414,20 @@ def _pick_first_existing(df: pd.DataFrame, candidates: List[str]) -> Optional[st
 def _sort_detail(df: pd.DataFrame) -> pd.DataFrame:
     """
     Sort order (ASC), highest priority first:
-      1) scenario__tableau
-      2) scenario__alteryx
-      3) provider
-      4) CV.SurvBank.143.1.1
+      1) scenario_tab
+      2) scenario_alt
+      3) provider_tab/provider_alt/provider
+      4) CV.SurvBank.143.1.1_tab / _alt / plain
     """
-
-    scen_t_col = _pick_first_existing(
-        df, ["scenario__tableau", "scenario_tableau", "scenario"]
-    )
-    scen_a_col = _pick_first_existing(
-        df, ["scenario__alteryx", "scenario_alteryx"]
-    )
+    scen_t_col = _pick_first_existing(df, ["scenario_tab", "scenario__tableau", "scenario_tableau", "scenario"])
+    scen_a_col = _pick_first_existing(df, ["scenario_alt", "scenario__alteryx", "scenario_alteryx"])
     provider_col = _pick_first_existing(
-        df, ["provider", "provider__alteryx", "provider__tableau",
+        df, ["provider_tab", "provider_alt", "provider",
+             "survey_provider_tab", "comparison_provider_tab",
              "survey_provider", "comparison_provider"]
     )
     cv_col = _pick_first_existing(
-        df, ["CV.SurvBank.143.1.1",
-             "CV.SurvBank.143.1.1__alteryx",
-             "CV.SurvBank.143.1.1__tableau"]
+        df, ["CV.SurvBank.143.1.1_tab", "CV.SurvBank.143.1.1_alt", "CV.SurvBank.143.1.1"]
     )
 
     sort_cols = []
@@ -367,22 +445,71 @@ def _sort_detail(df: pd.DataFrame) -> pd.DataFrame:
 
     df2 = df.copy()
 
-    # numeric-aware sorting
     tmp_cols = []
     for i, c in enumerate(sort_cols):
         tmp = f"__sortkey_{i}"
         df2[tmp] = _try_numeric_for_sort(df2[c])
         tmp_cols.append(tmp)
 
-    df2 = df2.sort_values(
-        by=tmp_cols,
-        ascending=True,
-        kind="mergesort"   # stable sort
-    )
-
+    df2 = df2.sort_values(by=tmp_cols, ascending=True, kind="mergesort")
     df2 = df2.drop(columns=tmp_cols, errors="ignore")
     return df2.reset_index(drop=True)
 
+
+# ============================================================
+# Detail column ordering
+# ============================================================
+
+def _append_if_exists(out: List[str], df: pd.DataFrame, col: str) -> None:
+    if col in df.columns and col not in out:
+        out.append(col)
+
+
+def _build_detail_cols(
+    merged: pd.DataFrame,
+    join_pairs: List[Tuple[str, str]],
+    cmp_pairs: List[Tuple[str, str]],
+    keep_pairs: List[Tuple[str, str]],
+) -> List[str]:
+    """
+    REQUIRED BEGINNING (exact order):
+      scenario_tab, scenario_alt, provider_tab, provider_alt, filter_selection
+
+    Then:
+      - join keys
+      - keep/include fields (non-compare)
+      - compare fields at end (both sides + match flag)
+    """
+    cols: List[str] = []
+
+    # 0) MUST-BE-FIRST (exact order)
+    for c in ["scenario_tab", "scenario_alt", "filter_selection"]:
+        _append_if_exists(cols, merged, c)
+
+
+    # 1) JOIN keys next
+    for (tcol, acol) in join_pairs:
+        _append_if_exists(cols, merged, f"{tcol}_tab")
+        _append_if_exists(cols, merged, f"{acol}_alt")
+
+    # 2) keep/include fields (exclude join + compare pairs)
+    join_set = set(join_pairs)
+    cmp_set = set(cmp_pairs)
+
+    for (tcol, acol) in keep_pairs:
+        if (tcol, acol) in join_set or (tcol, acol) in cmp_set:
+            continue
+        _append_if_exists(cols, merged, f"{tcol}_tab")
+        _append_if_exists(cols, merged, f"{acol}_alt")
+
+    # 3) COMPARE fields last (+ match flags)
+    for (tcol, acol) in cmp_pairs:
+        _append_if_exists(cols, merged, f"{tcol}_tab")
+        _append_if_exists(cols, merged, f"{acol}_alt")
+        flag_col = f"{_safe_flag_name(tcol)}__match"
+        _append_if_exists(cols, merged, flag_col)
+
+    return cols
 
 
 # ============================================================
@@ -392,7 +519,7 @@ def _sort_detail(df: pd.DataFrame) -> pd.DataFrame:
 def main():
     mapping = _load_mapping()
 
-    # Load Alteryx CSV (do NOT rename columns)
+    # Load Alteryx CSV (do NOT rename headers)
     alteryx_df = _std_cols(pd.read_csv(ALTERYX_CSV))
 
     # Find which Alteryx columns correspond to Tableau 'provider' and 'scenario'
@@ -406,7 +533,7 @@ def main():
         hint = [c for c in alteryx_df.columns if "prov" in c.lower() or "bank" in c.lower()][:20]
         raise ValueError(
             "Could not find Tableau field 'provider' in mapping file (column name = provider). "
-            f"Add a mapping row with column name='provider' and alteryx_column_name='<your provider col>'. "
+            "Add a mapping row with column name='provider' and alteryx_column_name='<your provider col>'. "
             f"Provider-like columns found in Alteryx: {hint}"
         )
 
@@ -467,93 +594,68 @@ def main():
                 alt_join,
                 on=jk_cols,
                 how="outer",
-                suffixes=("__tableau", "__alteryx"),
+                suffixes=("_tab", "_alt"),   # required suffix style
                 indicator=True,
             )
 
-            def _blank(s):
-                return s.isna() | (s.astype(str).str.strip() == "")
+            # Force explicit _tab / _alt naming for all mapped cols (even if pandas didn't suffix)
+            t_cols_needed = {t for (t, _) in (set(join_pairs) | set(cmp_pairs) | set(keep_pairs))}
+            a_cols_needed = {a for (_, a) in (set(join_pairs) | set(cmp_pairs) | set(keep_pairs))}
+            merged = _enforce_tab_alt_suffixes(merged, t_cols_needed, a_cols_needed)
 
-            fs_t_col = "filter_selection__tableau" if "filter_selection__tableau" in merged.columns else (
+            # ------------------------------------------------------------
+            # Fill missing filter_selection_tab using lookup from scenario/provider
+            # then coalesce to ONE column named filter_selection
+            # ------------------------------------------------------------
+            fs_t_col = "filter_selection_tab" if "filter_selection_tab" in merged.columns else (
                 "filter_selection" if "filter_selection" in merged.columns else None
             )
-            fs_a_col = "filter_selection__alteryx" if "filter_selection__alteryx" in merged.columns else None
+            fs_a_col = "filter_selection_alt" if "filter_selection_alt" in merged.columns else None
 
-            sc_col = None
-            for cand in ["scenario", "scenario__tableau", "scenario__alteryx"]:
-                if cand in merged.columns:
-                    sc_col = cand
-                    break
+            sc_col = _pick_first_existing(merged, ["scenario_tab", "scenario_alt", "scenario"])
+            prov_col = _pick_first_existing(merged, ["provider_tab", "provider_alt", "provider"])
 
-            prov_col = None
-            for cand in ["provider", "provider__tableau", "provider__alteryx", "survey_provider", "comparison_provider"]:
-                if cand in merged.columns:
-                    prov_col = cand
-                    break
-
-            if fs_t_col and sc_col:
+            if fs_t_col and sc_col and "filter_selection_tab" in merged.columns:
                 src = merged.copy()
-                src_nonblank = src[~_blank(src[fs_t_col])]
+                src_nonblank = src[~_blank_series(src["filter_selection_tab"])]
 
                 if prov_col and prov_col in merged.columns:
                     key = [prov_col, sc_col]
                     lut = (
-                        src_nonblank.groupby(key)[fs_t_col]
+                        src_nonblank.groupby(key)["filter_selection_tab"]
                         .first()
                         .to_dict()
                     )
-                    if "filter_selection__tableau" in merged.columns:
-                        m = _blank(merged["filter_selection__tableau"])
-                        merged.loc[m, "filter_selection__tableau"] = merged.loc[m].apply(
-                            lambda r: lut.get((r.get(prov_col), r.get(sc_col))), axis=1
-                        )
+                    m = _blank_series(merged["filter_selection_tab"])
+                    merged.loc[m, "filter_selection_tab"] = merged.loc[m].apply(
+                        lambda r: lut.get((r.get(prov_col), r.get(sc_col))), axis=1
+                    )
                 else:
                     lut = (
-                        src_nonblank.groupby(sc_col)[fs_t_col]
+                        src_nonblank.groupby(sc_col)["filter_selection_tab"]
                         .first()
                         .to_dict()
                     )
-                    if "filter_selection__tableau" in merged.columns:
-                        m = _blank(merged["filter_selection__tableau"])
-                        merged.loc[m, "filter_selection__tableau"] = merged.loc[m, sc_col].map(lut)
+                    m = _blank_series(merged["filter_selection_tab"])
+                    merged.loc[m, "filter_selection_tab"] = merged.loc[m, sc_col].map(lut)
 
-                if "filter_selection__tableau" in merged.columns:
-                    m2 = _blank(merged["filter_selection__tableau"])
-                    if fs_a_col and fs_a_col in merged.columns:
-                        merged.loc[m2, "filter_selection__tableau"] = merged.loc[m2, fs_a_col]
-                    elif "filter_selection" in merged.columns:
-                        merged.loc[m2, "filter_selection__tableau"] = merged.loc[m2, "filter_selection"]
+                # still blank? fall back to alteryx filter_selection_alt if present
+                m2 = _blank_series(merged["filter_selection_tab"])
+                if fs_a_col and fs_a_col in merged.columns:
+                    merged.loc[m2, "filter_selection_tab"] = merged.loc[m2, fs_a_col]
+                elif "filter_selection" in merged.columns:
+                    merged.loc[m2, "filter_selection_tab"] = merged.loc[m2, "filter_selection"]
 
-            scenario_col = None
-            for cand in ["scenario", "scenario__tableau", "scenario__alteryx"]:
-                if cand in merged.columns:
-                    scenario_col = cand
-                    break
+            # ✅ ONE filter_selection column only
+            merged = _coalesce_filter_selection_one_col(merged)
 
-            if scenario_col and "filter_selection" in merged.columns:
-                nonblank = merged[
-                    merged["filter_selection"].notna()
-                    & (merged["filter_selection"].astype(str).str.strip() != "")
-                ].copy()
-
-                scen_to_fs = (
-                    nonblank.groupby(scenario_col)["filter_selection"]
-                    .first()
-                    .to_dict()
-                )
-
-                mask = merged["filter_selection"].isna() | (merged["filter_selection"].astype(str).str.strip() == "")
-                merged.loc[mask, "filter_selection"] = merged.loc[mask, scenario_col].map(scen_to_fs)
-
-            # Field compare + match flags (NO SUMMARY SHEETS WRITTEN)
+            # ---------------- Field compare + match flags ----------------
             for (tcol, acol) in cmp_pairs:
-                t_series = merged.get(tcol, merged.get(f"{tcol}__tableau"))
-                a_series = merged.get(acol, merged.get(f"{acol}__alteryx"))
+                t_name = f"{tcol}_tab"
+                a_name = f"{acol}_alt"
 
-                if t_series is None:
-                    t_series = pd.Series([None] * len(merged))
-                if a_series is None:
-                    a_series = pd.Series([None] * len(merged))
+                t_series = merged[t_name] if t_name in merged.columns else pd.Series([None] * len(merged))
+                a_series = merged[a_name] if a_name in merged.columns else pd.Series([None] * len(merged))
 
                 dp = round_map.get((tcol, acol))
                 if dp is not None:
@@ -570,60 +672,18 @@ def main():
                 flag_col = f"{_safe_flag_name(tcol)}__match"
                 merged[flag_col] = eq
 
-            # ---------------- DETAIL ----------------
-            detail_cols: List[str] = []
-
-            if "filter_selection" in merged.columns:
-                detail_cols.append("filter_selection")
-
-            for (tcol, acol) in join_pairs:
-                if tcol in merged.columns:
-                    detail_cols.append(tcol)
-                elif f"{tcol}__tableau" in merged.columns:
-                    detail_cols.append(f"{tcol}__tableau")
-
-                if acol in merged.columns:
-                    detail_cols.append(acol)
-                elif f"{acol}__alteryx" in merged.columns:
-                    detail_cols.append(f"{acol}__alteryx")
-
-            for (tcol, acol) in cmp_pairs:
-                if tcol in merged.columns:
-                    detail_cols.append(tcol)
-                elif f"{tcol}__tableau" in merged.columns:
-                    detail_cols.append(f"{tcol}__tableau")
-
-                if acol in merged.columns:
-                    detail_cols.append(acol)
-                elif f"{acol}__alteryx" in merged.columns:
-                    detail_cols.append(f"{acol}__alteryx")
-
-                flag_col = f"{_safe_flag_name(tcol)}__match"
-                if flag_col in merged.columns:
-                    detail_cols.append(flag_col)
-
-            for (tcol, acol) in keep_pairs:
-                if (tcol, acol) in join_pairs or (tcol, acol) in cmp_pairs:
-                    continue
-
-                if tcol in merged.columns and tcol not in detail_cols:
-                    detail_cols.append(tcol)
-                elif f"{tcol}__tableau" in merged.columns and f"{tcol}__tableau" not in detail_cols:
-                    detail_cols.append(f"{tcol}__tableau")
-
-                if acol in merged.columns and acol not in detail_cols:
-                    detail_cols.append(acol)
-                elif f"{acol}__alteryx" in merged.columns and f"{acol}__alteryx" not in detail_cols:
-                    detail_cols.append(f"{acol}__alteryx")
-
-            seen = set()
-            detail_cols = [c for c in detail_cols if not (c in seen or seen.add(c))]
+            # ---------------- DETAIL (column order) ----------------
+            detail_cols = _build_detail_cols(
+                merged=merged,
+                join_pairs=join_pairs,
+                cmp_pairs=cmp_pairs,
+                keep_pairs=keep_pairs,
+            )
 
             detail = merged.loc[:, detail_cols].copy()
             if len(detail) > DETAIL_ROW_CAP:
                 detail = detail.head(DETAIL_ROW_CAP)
 
-            # ✅ SORT as requested (ascending)
             detail = _sort_detail(detail)
 
             detail.to_excel(writer, sheet_name=_safe_sheet(sheet, "__detail"), index=False)

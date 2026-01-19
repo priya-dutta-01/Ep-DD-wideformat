@@ -9,8 +9,6 @@ import itertools
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Union
-
 
 import requests
 import pandas as pd
@@ -50,6 +48,7 @@ class DashboardModule:
         return []
 
     def build_attempt_fixed_filters(self, rng: random.Random) -> Dict[str, List[str]]:
+        # Base module has no enforced fixed filters
         return {}
 
     def validate_ready(self) -> None:
@@ -57,65 +56,131 @@ class DashboardModule:
 
 
 class EpisodeDeepDiveModule(DashboardModule):
-    PERIOD_FIELD = "period"  # Can be moved to mapping excel
-    PRODUCT_FIELD = "product_name"  # Needs to be changed for different instruments
-    EPISODE_FIELD = "episode_name"
-    QUESTION_FIELD = "txt_question_long_prefix (group)"
+    """
+    Fully mapping-driven: NO hardcoded field names.
+    If a role is missing in semantic_field_mapping, we raise an error.
+    """
 
-    SURVEY_PROVIDER_FIELD = "survey_provider"
-    COMPARISON_PROVIDER_FIELD = "comparison_provider"
+    # No defaults (force mapping file)
+    PERIOD_FIELD: str = ""
+    PRODUCT_FIELD: str = ""
+    EPISODE_FIELD: str = ""
+    QUESTION_FIELD: str = ""
 
-    # NEW: provider-like parameters
-    BRAND_INTEREST_FIELD = "brand_of_interest_para"
-    BRAND_COMPARISON_FIELD = "brand_of_comparison_para"
+    SURVEY_PROVIDER_FIELD: str = ""
+    COMPARISON_PROVIDER_FIELD: str = ""
+    BRAND_INTEREST_FIELD: str = ""
+    BRAND_COMPARISON_FIELD: str = ""
 
-    def __init__(self, dashboard_name: str, combo_pool: Dict[Tuple[str, str], List[str]]):
+    def __init__(
+        self,
+        dashboard_name: str,
+        combo_pool: Dict[Tuple[str, str], List[str]],
+        semantic_cfg: Optional[Dict[str, object]] = None,
+    ):
         super().__init__(dashboard_name)
         self.combo_pool = combo_pool
 
-    def remove_from_random_pool(self) -> List[str]:
-        return [
-            self.PERIOD_FIELD,
-            self.PRODUCT_FIELD,
-            self.EPISODE_FIELD,
-            self.QUESTION_FIELD,
-            self.SURVEY_PROVIDER_FIELD,
-            self.COMPARISON_PROVIDER_FIELD,
-            self.BRAND_INTEREST_FIELD,
-            self.BRAND_COMPARISON_FIELD,
-        ]
+        semantic_cfg = semantic_cfg or {}
+        field_by_role = (semantic_cfg.get("field_by_role") or {})
+
+        # optional metadata from semantic sheet
+        self.provider_control_fields: List[str] = list(semantic_cfg.get("provider_control_fields") or [])
+        self.single_select_fields: List[str] = list(semantic_cfg.get("single_select_fields") or [])
+
+        role_to_attr = {
+            "period": "PERIOD_FIELD",
+            "product": "PRODUCT_FIELD",
+            "episode": "EPISODE_FIELD",
+            "question": "QUESTION_FIELD",
+            "provider_survey": "SURVEY_PROVIDER_FIELD",
+            "provider_comparison": "COMPARISON_PROVIDER_FIELD",
+            "brand_interest": "BRAND_INTEREST_FIELD",
+            "brand_comparison": "BRAND_COMPARISON_FIELD",
+        }
+
+        # Apply semantic field mapping (role -> tableau field)
+        for role, attr in role_to_attr.items():
+            tf = str(field_by_role.get(role, "")).strip()
+            if tf:
+                setattr(self, attr, tf)
+
+        # If provider_control_fields isn't explicitly provided,
+        # infer it from whatever provider-like roles exist in mapping.
+        if not self.provider_control_fields:
+            inferred = []
+            for f in [
+                self.SURVEY_PROVIDER_FIELD,
+                self.COMPARISON_PROVIDER_FIELD,
+                self.BRAND_INTEREST_FIELD,
+                self.BRAND_COMPARISON_FIELD,
+            ]:
+                if str(f).strip():
+                    inferred.append(f)
+            self.provider_control_fields = inferred
 
     def validate_ready(self) -> None:
-        if not self.combo_pool:
+        """
+        Fail fast if semantic_field_mapping is missing required roles.
+        """
+        required_roles = {
+            "period": self.PERIOD_FIELD,
+            "product": self.PRODUCT_FIELD,
+            "episode": self.EPISODE_FIELD,
+            "question": self.QUESTION_FIELD,
+        }
+
+        missing = [role for role, field in required_roles.items() if not str(field).strip()]
+        if missing:
             raise ValueError(
-                "deep_dive_questions combo_pool is empty. "
-                "Please ensure the 'deep_dive_questions' sheet has valid rows."
+                f"[{self.dashboard_name}] semantic_field_mapping is missing required roles: {missing}. "
+                "Add rows with role + tableau_field for these roles."
             )
 
+    def remove_from_random_pool(self) -> List[str]:
+        """
+        Keep these controlled as single-select and always-present.
+        """
+        # period is always forced in code; we can remove it from randomness too if you want
+        return [self.PRODUCT_FIELD, self.EPISODE_FIELD, self.QUESTION_FIELD]
+
     def build_attempt_fixed_filters(self, rng: random.Random) -> Dict[str, List[str]]:
-        fixed: Dict[str, List[str]] = {self.PERIOD_FIELD: ["Q1 2025"]}
+        """
+        Pick ONE product, ONE question, and ONE episode.
+        combo_pool keys: (product, question) -> [episodes]
+        """
+        fixed: Dict[str, List[str]] = {}
+        if not self.combo_pool:
+            return fixed
 
-        # Always pick exactly ONE product and ONE question
-        (product, question_long) = rng.choice(list(self.combo_pool.keys()))
-        episodes = self.combo_pool.get((product, question_long), []) or []
+        pq_keys = [k for k in self.combo_pool.keys() if isinstance(k, tuple) and len(k) == 2]
+        if not pq_keys:
+            return fixed
 
-        # Always pick exactly ONE episode (if none exist for the combo, reroll should handle empties)
-        chosen_ep = rng.choice(episodes) if episodes else ""
-
+        product, question = rng.choice(pq_keys)
         fixed[self.PRODUCT_FIELD] = [product]
-        fixed[self.QUESTION_FIELD] = [question_long]
-        fixed[self.EPISODE_FIELD] = [chosen_ep] if chosen_ep else [""]
+        fixed[self.QUESTION_FIELD] = [question]
+
+        episodes = self.combo_pool.get((product, question), [])
+        if episodes:
+            fixed[self.EPISODE_FIELD] = [rng.choice(episodes)]
 
         return fixed
 
 
+def _dash_key(s: str) -> str:
+    # normalize: keep only alnum, lowercase
+    return re.sub(r"[^a-z0-9]+", "", str(s).strip().lower())
+
 
 def get_dashboard_module(
     dashboard_name: str,
-    combo_pool: Optional[Dict[Tuple[str, str], List[str]]] = None
+    combo_pool: Optional[Dict[Tuple[str, str], List[str]]] = None,
+    semantic_cfg: Optional[Dict[str, object]] = None,
 ) -> DashboardModule:
-    if str(dashboard_name).strip().lower() == "episode deep dive".lower():
-        return EpisodeDeepDiveModule(dashboard_name, combo_pool=combo_pool or {})
+    # Match "Episode deep dive", "Episode_deep_dive", "EPISODE DEEP DIVE", etc.
+    if _dash_key(dashboard_name) == _dash_key("Episode deep dive"):
+        return EpisodeDeepDiveModule(dashboard_name, combo_pool=combo_pool or {}, semantic_cfg=semantic_cfg)
     return DashboardModule(dashboard_name)
 
 
@@ -127,20 +192,42 @@ def normalize_view_name(sheet_name: str) -> str:
     return re.sub(r"[\s()]+", "", str(sheet_name)).strip()
 
 
+def format_filter_selection(selected_filters: dict[str, list[str]]) -> str:
+    return "; ".join([f"{k}=[{'|'.join(map(str, v))}]" for k, v in selected_filters.items()])
+
+
+def _strip_outer_quotes(s: str) -> str:
+    if s is None:
+        return ""
+    s = str(s).strip()
+    if len(s) >= 2 and ((s[0] == '"' and s[-1] == '"') or (s[0] == "'" and s[-1] == "'")):
+        s = s[1:-1].strip()
+    s = s.replace('""', '"')
+    return s
+
+
+def parse_filter_values(values_str: str) -> list[str]:
+    """
+    Source of truth: mapping_file stores values pipe-delimited: A|B|C
+    Fallback: split commas not between digits (keeps 25,000 intact)
+    """
+    s = "" if values_str is None else str(values_str).strip()
+    if not s:
+        return []
+
+    if "|" in s:
+        parts = [p.strip() for p in s.split("|")]
+    else:
+        parts = [p.strip() for p in re.split(r"(?<!\d),(?!\d)", s)]
+
+    return [_strip_outer_quotes(p) for p in parts if p]
+
 
 def normalize_selected_values(vals: List[object]) -> List[object]:
     """
     Expand multi-select strings into individual member values.
-
-    Source of truth:
-      - mapping_file filter values are pipe-delimited: A|B|C
-
-    Fallback:
-      - if no pipe is present, and there are commas, use parse_filter_values()'s fallback
-        (which avoids splitting inside numbers like 25,000)
     """
     out: List[object] = []
-
     for v in (vals or []):
         if v is None or (isinstance(v, float) and pd.isna(v)):
             continue
@@ -149,15 +236,12 @@ def normalize_selected_values(vals: List[object]) -> List[object]:
         if not s or s.lower() == "nan":
             continue
 
-        # Expand pipe-delimited values (your Excel format)
         if "|" in s:
             out.extend(parse_filter_values(s))
             continue
 
-        # Otherwise, only expand on comma if it looks like a multi-list,
-        # NOT a single value that merely contains commas (e.g. "$25,000 to ...")
         if "," in s:
-            parts = parse_filter_values(s)  # fallback handles digit-commas safely
+            parts = parse_filter_values(s)
             if len(parts) > 1:
                 out.extend(parts)
             else:
@@ -172,110 +256,56 @@ def normalize_selected_values(vals: List[object]) -> List[object]:
         if x not in seen:
             seen.add(x)
             uniq.append(x)
-
     return uniq
 
 
-def format_filter_selection(selected_filters: dict[str, list[str]]) -> str:
-    return "; ".join([f"{k}=[{'|'.join(map(str, v))}]" for k, v in selected_filters.items()])
-
-def _strip_outer_quotes(s: str) -> str:
-    if s is None:
-        return ""
-    s = str(s).strip()
-    if len(s) >= 2 and ((s[0] == '"' and s[-1] == '"') or (s[0] == "'" and s[-1] == "'")):
-        s = s[1:-1].strip()
-    s = s.replace('""', '"')
-    return s
-
-def parse_filter_values(values_str: str) -> list[str]:
-    """
-    Your mapping_file.xlsx stores filter values separated by '|'.
-    Use that as the source of truth.
-
-    Fallbacks:
-      - If no '|' present, fall back to splitting on commas NOT inside numbers.
-    """
-    s = "" if values_str is None else str(values_str).strip()
-    if not s:
-        return []
-
-    if "|" in s:
-        parts = [p.strip() for p in s.split("|")]
-    else:
-        # fallback: split commas not between digits (keeps 25,000 intact)
-        parts = [p.strip() for p in re.split(r"(?<!\d),(?!\d)", s)]
-
-    return [_strip_outer_quotes(p) for p in parts if p]
-
-
-def smart_split_values(values_str: str) -> list[str]:
-    """
-    Split filter-values into list items while preserving commas inside numbers like $25,000.
-
-    Rules:
-      1) If we see delimiters like ", $..." split on comma+space before '$'
-      2) Otherwise split on commas NOT between digits (keeps 100,000 intact)
-    Then strip any accidental outer quotes on each part.
-    """
-    s = "" if values_str is None else str(values_str).strip()
-    if not s:
-        return []
-
-    if re.search(r",\s+\$", s):
-        parts = re.split(r",\s+(?=\$)", s)
-    else:
-        parts = re.split(r"(?<!\d),(?!\d)", s)
-
-    cleaned = []
-    for p in parts:
-        p = p.strip()
-        if not p:
-            continue
-        cleaned.append(_strip_outer_quotes(p))
-    return cleaned
-
-def vf_encode_value(v: str) -> str:
-    """
-    Tableau vf multi-select: one param with comma-separated members.
-    If a member contains comma(s), wrap it in double quotes.
-    """
+def vf_encode_value(v: str, force_quote: bool = False) -> str:
     s = _strip_outer_quotes(v)
     if not s:
         return ""
-    if ("," in s) or ('"' in s):
-        s = s.replace('"', '""')
+
+    # Normalize curly apostrophes FIRST
+    s = s.replace("’", "'").replace("‘", "'")
+
+    needs_quote = force_quote or ("," in s) or ('"' in s)
+    if needs_quote:
+        s = s.replace('"', '""')   # escape quotes inside
         s = f'"{s}"'
+
     return s
 
-def build_vf_param_value(values: list[str]) -> str:
-    encoded = [vf_encode_value(v) for v in values if v is not None and str(v).strip() != ""]
-    encoded = [v for v in encoded if v]
-    return ",".join(encoded)
+
 
 def build_vf_params(selected_filters: dict[str, list[str]]) -> dict[str, str]:
     """
     Build Tableau vf params:
       vf_field=value1,value2,value3
-    with correct quoting ONLY when needed.
+
+    KEY FIX:
+      If ANY member requires quoting (comma/quote), quote ALL members for that field.
     """
     params: Dict[str, str] = {}
 
     for field, vals in (selected_filters or {}).items():
-        # Strip accidental quotes early, then encode for vf
-        clean_vals = []
+        raw_vals = []
         for v in (vals or []):
             if v is None:
                 continue
             vv = _strip_outer_quotes(str(v).strip())
             if vv:
-                clean_vals.append(vf_encode_value(vv))
+                raw_vals.append(vv)
 
-        clean_vals = [v for v in clean_vals if v]
-        if not clean_vals:
+        if not raw_vals:
             continue
 
-        params[f"vf_{field}"] = ",".join(clean_vals)
+        # If any value contains a comma/quote, force-quote ALL values for this field
+        force_quote_all = any(("," in x) or ('"' in x) for x in raw_vals)
+
+        encoded = [vf_encode_value(x, force_quote=force_quote_all) for x in raw_vals]
+        encoded = [e for e in encoded if e]
+
+        if encoded:
+            params[f"vf_{field}"] = ",".join(encoded)
 
     return params
 
@@ -285,10 +315,10 @@ def build_vf_params(selected_filters: dict[str, list[str]]) -> dict[str, str]:
 def safe_name(s: str) -> str:
     return re.sub(r"[^\w\-]+", "_", str(s)).strip("_")
 
+
 def make_local_rng(seed: Optional[int], dashboard: str) -> random.Random:
     """
     Deterministic RNG per dashboard (NOT per provider) so scenarios are identical across providers.
-    If seed is None, we still randomize per run.
     """
     base = f"{seed}|{dashboard}" if seed is not None else f"{dashboard}|{time.time_ns()}"
     r = random.Random()
@@ -316,9 +346,11 @@ def tableau_sign_in_pat(server_url: str, site_content_url: str, pat_name: str, p
     site_id = data["credentials"]["site"]["id"]
     return token, site_id
 
+
 def tableau_sign_out(server_url: str, token: str, api_ver=API_VER):
     url = f"{server_url}/api/{api_ver}/auth/signout"
     requests.post(url, headers={"X-Tableau-Auth": token})
+
 
 def get_workbook_id(server_url: str, token: str, site_id: str, workbook_key: str, api_ver=API_VER) -> str:
     url = f"{server_url}/api/{api_ver}/sites/{site_id}/workbooks"
@@ -334,17 +366,20 @@ def get_workbook_id(server_url: str, token: str, site_id: str, workbook_key: str
 
     raise ValueError(f"Workbook not found by contentUrl or name: {workbook_key}")
 
+
 def list_views_in_workbook(server_url: str, token: str, site_id: str, workbook_id: str, api_ver=API_VER) -> list[dict]:
     url = f"{server_url}/api/{api_ver}/sites/{site_id}/workbooks/{workbook_id}/views"
     r = requests.get(url, headers={"X-Tableau-Auth": token, "Accept": "application/json"})
     r.raise_for_status()
     return r.json().get("views", {}).get("view", [])
 
+
 def query_view_data_csv(server_url: str, token: str, site_id: str, view_id: str, vf_params: dict, api_ver=API_VER) -> pd.DataFrame:
     url = f"{server_url}/api/{api_ver}/sites/{site_id}/views/{view_id}/data"
     headers = {"X-Tableau-Auth": token, "Accept": "*/*"}
 
     r = requests.get(url, headers=headers, params=vf_params)
+    print("REQUEST URL:", r.url)
     r.raise_for_status()
 
     text = (r.text or "").strip()
@@ -379,13 +414,11 @@ def pick_random_filters(filter_pool: Dict[str, List[str]], rng: random.Random) -
             continue
 
         n = len(vals)
-
         if USE_MAJORITY_VALUE_SELECTION:
             min_k = (n // 2) + 1  # strictly > 50%
             k = rng.randint(min_k, n)
         else:
-            k = rng.choice([1, 2])
-            k = min(k, n)
+            k = min(rng.choice([1, 2]), n)
 
         selected[f] = rng.sample(vals, k=k)
 
@@ -418,6 +451,76 @@ def fetch_with_retry_same_filters(
 
 
 # ============================================================
+# Semantic fields loader
+# ============================================================
+
+def load_semantic_field_config(
+    xls: pd.ExcelFile,
+    dashboard_name: str,
+    sheet_name: str = "semantic_field_mapping",
+) -> Dict[str, object]:
+    try:
+        df = xls.parse(sheet_name)
+    except Exception:
+        return {"field_by_role": {}, "provider_control_fields": [], "single_select_fields": []}
+
+    df.columns = [str(c).strip().lower() for c in df.columns]
+
+    dash_col = "dashboard_name" if "dashboard_name" in df.columns else "dashboard name"
+    role_col = "role"
+    tab_col = "tableau_field" if "tableau_field" in df.columns else "tableau field"
+
+    if dash_col not in df.columns or role_col not in df.columns or tab_col not in df.columns:
+        raise ValueError(
+            f"'{sheet_name}' must contain columns: dashboard_name (or dashboard name), role, tableau_field (or tableau field)"
+        )
+
+    dn = str(dashboard_name).strip().lower()
+    sub = df[df[dash_col].astype(str).str.strip().str.lower() == dn].copy()
+
+    def is_yes(x) -> bool:
+        return str(x).strip().lower() in {"y", "yes", "true", "1"}
+
+    field_by_role: Dict[str, str] = {}
+    for _, r in sub.iterrows():
+        role = str(r.get(role_col, "")).strip().lower()
+        tf = str(r.get(tab_col, "")).strip()
+        if role and tf:
+            field_by_role[role] = tf
+
+    provider_control_fields: List[str] = []
+    if "is_provider_control" in sub.columns:
+        for _, r in sub.iterrows():
+            if is_yes(r.get("is_provider_control")):
+                tf = str(r.get(tab_col, "")).strip()
+                if tf:
+                    provider_control_fields.append(tf)
+
+    single_select_fields: List[str] = []
+    if "required_single_select" in sub.columns:
+        for _, r in sub.iterrows():
+            if is_yes(r.get("required_single_select")):
+                tf = str(r.get(tab_col, "")).strip()
+                if tf:
+                    single_select_fields.append(tf)
+
+    def dedupe_keep_order(xs: List[str]) -> List[str]:
+        seen = set()
+        out = []
+        for x in xs:
+            if x and x not in seen:
+                out.append(x)
+                seen.add(x)
+        return out
+
+    return {
+        "field_by_role": field_by_role,
+        "provider_control_fields": dedupe_keep_order(provider_control_fields),
+        "single_select_fields": dedupe_keep_order(single_select_fields),
+    }
+
+
+# ============================================================
 # deep_dive_questions loader
 # ============================================================
 
@@ -428,9 +531,28 @@ def load_deep_dive_combo_pool(xls: pd.ExcelFile) -> Dict[Tuple[str, str], List[s
         return {}
 
     df.columns = [str(c).strip().lower() for c in df.columns]
-    req = {"product_name", "episode_name", "question_long"}
-    if not req.issubset(df.columns):
-        raise ValueError(f"deep_dive_questions must have columns: {req}")
+
+    # Accept multiple possible headers
+    product_col_candidates = ["product_name", "product_product_name", "product"]
+    episode_col_candidates = ["episode_name", "episode_episode_name", "episode"]
+    question_col_candidates = ["question_long", "question", "txt_question_long", "txt_question_long_prefix (group)"]
+
+    def pick_col(cands):
+        for c in cands:
+            if c in df.columns:
+                return c
+        return None
+
+    product_col = pick_col(product_col_candidates)
+    episode_col = pick_col(episode_col_candidates)
+    question_col = pick_col(question_col_candidates)
+
+    if not product_col or not episode_col or not question_col:
+        raise ValueError(
+            "deep_dive_questions is missing required columns. "
+            f"Found={list(df.columns)} | Need product in {product_col_candidates}, "
+            f"episode in {episode_col_candidates}, question in {question_col_candidates}"
+        )
 
     def clean_str(x) -> str:
         s = "" if x is None else str(x).strip()
@@ -438,13 +560,14 @@ def load_deep_dive_combo_pool(xls: pd.ExcelFile) -> Dict[Tuple[str, str], List[s
 
     combo_pool: Dict[Tuple[str, str], List[str]] = {}
     for _, r in df.iterrows():
-        product = clean_str(r.get("product_name"))
-        episode = clean_str(r.get("episode_name"))
-        question_long = clean_str(r.get("question_long"))
+        product = clean_str(r.get(product_col))
+        episode = clean_str(r.get(episode_col))
+        question_long = clean_str(r.get(question_col))
         if not product or not episode or not question_long:
             continue
         combo_pool.setdefault((product, question_long), []).append(episode)
 
+    # de-dupe episodes per key
     for k, eps in combo_pool.items():
         seen = set()
         out = []
@@ -506,13 +629,6 @@ def scenario_filters_to_wide_exploded_rows(
     all_filter_columns: List[str],
     exclude_filter_columns: Optional[set[str]] = None,
 ) -> List[Dict[str, object]]:
-    """
-    WIDE + EXPLODED:
-      - fixed metadata cols
-      - one col per filter in all_filter_columns
-      - cartesian explosion across multi-valued filters
-      - expand comma-separated "csv-in-a-cell" values into separate exploded rows
-    """
     exclude_filter_columns = exclude_filter_columns or set()
 
     per_filter_values: List[List[object]] = []
@@ -530,11 +646,7 @@ def scenario_filters_to_wide_exploded_rows(
             continue
 
         expanded = normalize_selected_values(raw_vals)
-
-        if not expanded:
-            per_filter_values.append([pd.NA])
-        else:
-            per_filter_values.append(expanded)
+        per_filter_values.append(expanded if expanded else [pd.NA])
 
     rows: List[Dict[str, object]] = []
     for combo in itertools.product(*per_filter_values):
@@ -567,10 +679,6 @@ def build_validated_scenarios_for_dashboard(
     scenarios: int,
     filter_pool: Dict[str, List[str]],
     module: DashboardModule,
-    supports_survey_provider_on_ref: bool,
-    supports_comparison_provider_on_ref: bool,
-    supports_brand_interest_on_ref: bool,
-    supports_brand_comparison_on_ref: bool,
     seed: Optional[int],
 ) -> Tuple[List[Dict[str, List[str]]], List[int]]:
     """
@@ -581,6 +689,10 @@ def build_validated_scenarios_for_dashboard(
 
     scenario_filters: List[Dict[str, List[str]]] = []
     rerolls_used_list: List[int] = []
+
+    def _first_value(field_name: str) -> Optional[str]:
+        vals = filter_pool.get(field_name, [])
+        return vals[0] if vals else None
 
     for scen_num in range(1, scenarios + 1):
         got_data = False
@@ -594,16 +706,27 @@ def build_validated_scenarios_for_dashboard(
             final_filters.update(random_selected)
             final_filters.update(fixed_selected)
 
-            # Apply provider controls ONLY for gating on reference sheet (single provider)
-            if supports_survey_provider_on_ref and hasattr(module, "SURVEY_PROVIDER_FIELD"):
-                final_filters[module.SURVEY_PROVIDER_FIELD] = [gating_provider]
-            if supports_comparison_provider_on_ref and hasattr(module, "COMPARISON_PROVIDER_FIELD"):
-                final_filters[module.COMPARISON_PROVIDER_FIELD] = [gating_provider]
+            # ALWAYS force period to be present (single select) if available in filter_pool.
+            # Use semantic field name first; if not found, fall back to literal 'period'.
+            period_field = getattr(module, "PERIOD_FIELD", "period")
+            period_val = _first_value(period_field)
+            if period_val is None and period_field != "period":
+                period_val = _first_value("period")
+                if period_val is not None:
+                    period_field = "period"
+            if period_val is not None:
+                final_filters[period_field] = [period_val]
 
-            if supports_brand_interest_on_ref and hasattr(module, "BRAND_INTEREST_FIELD"):
-                final_filters[module.BRAND_INTEREST_FIELD] = [gating_provider]
-            if supports_brand_comparison_on_ref and hasattr(module, "BRAND_COMPARISON_FIELD"):
-                final_filters[module.BRAND_COMPARISON_FIELD] = [gating_provider]
+            # Enforce single-select fields (if any)
+            single_fields = getattr(module, "single_select_fields", []) or []
+            for f in single_fields:
+                if f in final_filters and isinstance(final_filters[f], list) and len(final_filters[f]) > 1:
+                    final_filters[f] = [final_filters[f][0]]
+
+            # Apply provider controls for gating on reference sheet (single provider)
+            provider_fields = getattr(module, "provider_control_fields", []) or []
+            for f in provider_fields:
+                final_filters[f] = [gating_provider]
 
             last_filters = final_filters
 
@@ -620,24 +743,11 @@ def build_validated_scenarios_for_dashboard(
             scenario_filters.append(last_filters)
             rerolls_used_list.append(MAX_SCENARIO_REROLLS)
 
-    # Strip provider controls from frozen base scenarios (so they are provider-agnostic)
-    if hasattr(module, "SURVEY_PROVIDER_FIELD"):
-        sp = module.SURVEY_PROVIDER_FIELD
-        for d in scenario_filters:
-            d.pop(sp, None)
-    if hasattr(module, "COMPARISON_PROVIDER_FIELD"):
-        cp = module.COMPARISON_PROVIDER_FIELD
-        for d in scenario_filters:
-            d.pop(cp, None)
-
-    if hasattr(module, "BRAND_INTEREST_FIELD"):
-        bi = module.BRAND_INTEREST_FIELD
-        for d in scenario_filters:
-            d.pop(bi, None)
-    if hasattr(module, "BRAND_COMPARISON_FIELD"):
-        bc = module.BRAND_COMPARISON_FIELD
-        for d in scenario_filters:
-            d.pop(bc, None)
+    # Strip provider controls from frozen base scenarios (provider-agnostic)
+    provider_fields = getattr(module, "provider_control_fields", []) or []
+    for d in scenario_filters:
+        for f in provider_fields:
+            d.pop(f, None)
 
     return scenario_filters, rerolls_used_list
 
@@ -732,10 +842,7 @@ def main():
 
     for _, row in filters_df.iterrows():
         fname = str(row["filter name"]).strip()
-        vals_raw = row["filter values"]
         vals = parse_filter_values(row["filter values"])
-
-
         if fname and vals:
             global_filter_pool[fname] = vals
             all_filter_columns_set.add(fname)
@@ -743,15 +850,14 @@ def main():
     if not global_filter_pool:
         raise ValueError("No filters found in filter_details.")
 
-    # Exclude provider-pill filter columns (we already have 'provider' column)
-    exclude_filter_columns = {
+    # Base exclude list (will be extended dynamically per dashboard)
+    base_exclude_filter_columns = {
         "survey_provider",
         "comparison_provider",
         "brand_of_interest_para",
         "brand_of_comparison_para",
     }
 
-    # Accumulate WIDE exploded scenario rows for Alteryx
     scenario_wide_rows: List[Dict[str, object]] = []
 
     token = None
@@ -769,7 +875,8 @@ def main():
         for dashboard_name, dash_group in mapping_df.groupby("dashboard name"):
             dash_group = dash_group.copy()
 
-            module = get_dashboard_module(dashboard_name, combo_pool=combo_pool)
+            semantic_cfg = load_semantic_field_config(xls, dashboard_name)
+            module = get_dashboard_module(dashboard_name, combo_pool=combo_pool, semantic_cfg=semantic_cfg)
             module.validate_ready()
 
             # Add module fixed fields to wide output column universe
@@ -807,6 +914,11 @@ def main():
 
             results_by_sheet: Dict[str, List[pd.DataFrame]] = {s: [] for s in dash_sheet_colmap.keys()}
 
+            # Dynamic exclude columns (provider controls, plus any hardcoded ones)
+            exclude_filter_columns = set(base_exclude_filter_columns)
+            for f in (getattr(module, "provider_control_fields", []) or []):
+                exclude_filter_columns.add(f)
+
             # Freeze filter columns list (stable ordering) for scenario file
             all_filter_columns = sorted(all_filter_columns_set)
 
@@ -822,11 +934,6 @@ def main():
                 scenarios=args.scenarios,
                 filter_pool=filter_pool,
                 module=module,
-                # IMPORTANT: don't infer "support" from output columns; use module capability
-                supports_survey_provider_on_ref=hasattr(module, "SURVEY_PROVIDER_FIELD"),
-                supports_comparison_provider_on_ref=hasattr(module, "COMPARISON_PROVIDER_FIELD"),
-                supports_brand_interest_on_ref=hasattr(module, "BRAND_INTEREST_FIELD"),
-                supports_brand_comparison_on_ref=hasattr(module, "BRAND_COMPARISON_FIELD"),
                 seed=args.seed,
             )
 
@@ -864,17 +971,10 @@ def main():
                         base_filters = scenario_filters_list[scen_num - 1]
                         final_filters = dict(base_filters)
 
-                        # IMPORTANT FIX:
-                        # Always apply provider controls for real fetches.
-                        # (Tableau often needs these even if they are not output columns.)
-                        if hasattr(module, "SURVEY_PROVIDER_FIELD"):
-                            final_filters[module.SURVEY_PROVIDER_FIELD] = [provider]
-                        if hasattr(module, "COMPARISON_PROVIDER_FIELD"):
-                            final_filters[module.COMPARISON_PROVIDER_FIELD] = [provider]
-                        if hasattr(module, "BRAND_INTEREST_FIELD"):
-                            final_filters[module.BRAND_INTEREST_FIELD] = [provider]
-                        if hasattr(module, "BRAND_COMPARISON_FIELD"):
-                            final_filters[module.BRAND_COMPARISON_FIELD] = [provider]
+                        # Always apply provider controls for real fetches
+                        provider_fields = getattr(module, "provider_control_fields", []) or []
+                        for f in provider_fields:
+                            final_filters[f] = [provider]
 
                         jobs.append((view_id, sheet_name, provider, scen_num, final_filters))
 
@@ -909,8 +1009,6 @@ def main():
 
                         # Keep Tableau column headers as-is
                         df_mod = df.copy()
-
-                        # Ensure standard context columns exist on every sheet
                         filters_used = res.get("filters", {}) or {}
 
                         def _pick(vals):
@@ -924,9 +1022,14 @@ def main():
                                 return ", ".join(str(x) for x in vals)
                             return str(vals)
 
-                        product_val = _pick(filters_used.get(getattr(module, "PRODUCT_FIELD", "product_name")))
-                        episode_val = _pick(filters_used.get(getattr(module, "EPISODE_FIELD", "episode_name")))
-                        question_val = _pick(filters_used.get(getattr(module, "QUESTION_FIELD", "txt_question_long_prefix (group)")))
+                        # IMPORTANT: use semantic_field_mapping-derived names ONLY (no hardcoded fallbacks)
+                        product_field = module.PRODUCT_FIELD
+                        episode_field = module.EPISODE_FIELD
+                        question_field = module.QUESTION_FIELD
+
+                        product_val = _pick(filters_used.get(product_field))
+                        episode_val = _pick(filters_used.get(episode_field))
+                        question_val = _pick(filters_used.get(question_field))
 
                         if "product" not in df_mod.columns:
                             df_mod["product"] = product_val

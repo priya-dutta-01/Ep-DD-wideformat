@@ -1,33 +1,37 @@
-# tableau_download_test.py
-# Standalone Tableau REST "view data CSV" download tester that loads creds from .env
-
+# export_dashboard_sheet_map.py
+#
+# Downloads a Tableau workbook's content (TWB/TWBX), parses dashboards and the worksheets used within them,
+# and writes a CSV mapping: dashboard_name -> worksheet_name.
+#
+# Auth: Personal Access Token (PAT)
+# Env vars required:
+#   TABLEAU_SERVER_URL   e.g. https://us-east-1.online.tableau.com
+#   TABLEAU_SITE         site contentUrl ("" for Default site)
+#   TABLEAU_TOKEN_NAME
+#   TABLEAU_TOKEN_VALUE
+#
+# Usage:
+#   python export_dashboard_sheet_map.py --workbook "Book1" --out dashboard_sheet_map.csv
+#
+import argparse
+import io
 import os
-import sys
-import requests
+import zipfile
 import xml.etree.ElementTree as ET
+from pathlib import Path
+from typing import Dict, List, Set, Tuple
+
+import requests
 from dotenv import load_dotenv
 
 API_VER = "3.19"
-
-
-def load_env():
-    """
-    Loads .env from:
-      1) TABLEAU_DOTENV_PATH if set, else
-      2) .env in current working directory
-    """
-    dotenv_path = os.getenv("TABLEAU_DOTENV_PATH", ".env")
-    load_dotenv(dotenv_path=dotenv_path, override=True)
+NS_REST = {"t": "http://tableau.com/api"}  # REST XML only (not TWB XML)
 
 
 def must_env(k: str) -> str:
     v = os.getenv(k)
-    if not v:
-        raise RuntimeError(
-            f"Missing env var: {k}\n"
-            f"Make sure {k} is present in your .env (or in system env vars).\n"
-            f"Tip: you can set TABLEAU_DOTENV_PATH to point to the correct .env file."
-        )
+    if v is None:
+        raise RuntimeError(f"Missing env var: {k}")
     return v
 
 
@@ -35,29 +39,32 @@ def tableau_headers(token: str) -> dict:
     return {"X-Tableau-Auth": token}
 
 
-def signin(server_url: str, site_content_url: str, token_name: str, token_value: str):
-    """
-    Returns (auth_token, site_id)
-    """
+def signin_pat_xml(server_url: str, site_content_url: str, token_name: str, token_value: str) -> Tuple[str, str]:
     url = f"{server_url}/api/{API_VER}/auth/signin"
-    payload = {
-        "credentials": {
-            "personalAccessTokenName": token_name,
-            "personalAccessTokenSecret": token_value,
-            "site": {"contentUrl": site_content_url},
-        }
-    }
-    r = requests.post(url, json=payload, timeout=60)
-    r.raise_for_status()
-    data = r.json()
-    cred = data["credentials"]
-    return cred["token"], cred["site"]["id"]
+    xml_payload = f"""<?xml version="1.0" encoding="UTF-8"?>
+<tsRequest>
+  <credentials personalAccessTokenName="{token_name}" personalAccessTokenSecret="{token_value}">
+    <site contentUrl="{site_content_url}"/>
+  </credentials>
+</tsRequest>
+""".encode("utf-8")
+
+    r = requests.post(url, data=xml_payload, headers={"Content-Type": "application/xml"}, timeout=60)
+    if r.status_code >= 400:
+        raise RuntimeError(f"Sign-in failed HTTP {r.status_code}\n{r.text[:1200]}")
+
+    root = ET.fromstring(r.text)
+    cred = root.find(".//t:credentials", NS_REST)
+    site_el = root.find(".//t:site", NS_REST)
+    if cred is None or "token" not in cred.attrib:
+        raise RuntimeError("Could not find credentials token in sign-in response.")
+    if site_el is None or "id" not in site_el.attrib:
+        raise RuntimeError("Could not find site id in sign-in response.")
+
+    return cred.attrib["token"], site_el.attrib["id"]
 
 
-def signout(server_url: str, token: str):
-    """
-    Best-effort signout.
-    """
+def signout(server_url: str, token: str) -> None:
     try:
         url = f"{server_url}/api/{API_VER}/auth/signout"
         requests.post(url, headers=tableau_headers(token), timeout=30)
@@ -66,31 +73,28 @@ def signout(server_url: str, token: str):
 
 
 def find_workbook_id(server_url: str, token: str, site_id: str, workbook_name: str) -> str:
-    """
-    Searches workbooks by name (exact match) and returns workbook_id.
-    Uses pagination.
-    """
     url = f"{server_url}/api/{API_VER}/sites/{site_id}/workbooks"
-    headers = tableau_headers(token)
-
     page = 1
     page_size = 100
 
     while True:
-        r = requests.get(url, headers=headers, params={"pageNumber": page, "pageSize": page_size}, timeout=60)
-        r.raise_for_status()
+        r = requests.get(
+            url,
+            headers=tableau_headers(token),
+            params={"pageNumber": page, "pageSize": page_size},
+            timeout=60,
+        )
+        if r.status_code >= 400:
+            raise RuntimeError(f"Workbooks list failed HTTP {r.status_code}\n{r.text[:1200]}")
 
         root = ET.fromstring(r.text)
-        ns = {"t": "http://tableau.com/api"}
-
-        for wb in root.findall(".//t:workbook", ns):
+        for wb in root.findall(".//t:workbook", NS_REST):
             if wb.attrib.get("name") == workbook_name:
                 return wb.attrib["id"]
 
-        pagination = root.find(".//t:pagination", ns)
+        pagination = root.find(".//t:pagination", NS_REST)
         if pagination is None:
             break
-
         total = int(pagination.attrib.get("totalAvailable", "0"))
         if page * page_size >= total:
             break
@@ -99,125 +103,128 @@ def find_workbook_id(server_url: str, token: str, site_id: str, workbook_name: s
     raise RuntimeError(f"Workbook not found (exact name match): {workbook_name}")
 
 
-def find_view_id(server_url: str, token: str, site_id: str, workbook_id: str, view_name: str) -> str:
+def download_workbook_content(server_url: str, token: str, site_id: str, workbook_id: str) -> bytes:
+    url = f"{server_url}/api/{API_VER}/sites/{site_id}/workbooks/{workbook_id}/content"
+    r = requests.get(url, headers=tableau_headers(token), timeout=300)
+    if r.status_code >= 400:
+        raise RuntimeError(f"Workbook content download failed HTTP {r.status_code}\n{r.text[:1200]}")
+    return r.content
+
+
+def extract_twb_xml(content_bytes: bytes) -> bytes:
+    # TWBX is ZIP; TWB is plain XML
+    if content_bytes[:2] == b"PK":
+        with zipfile.ZipFile(io.BytesIO(content_bytes), "r") as z:
+            twb_files = [n for n in z.namelist() if n.lower().endswith(".twb")]
+            if not twb_files:
+                raise RuntimeError("Downloaded TWBX but no .twb found inside.")
+            with z.open(twb_files[0], "r") as f:
+                return f.read()
+    return content_bytes
+
+
+def _collect_all_worksheet_names(root: ET.Element) -> Set[str]:
     """
-    Finds a view (sheet) inside a workbook by name (exact match) and returns view_id.
+    Collect worksheet names declared in the TWB.
+    These are the canonical worksheet names we match dashboard zones against.
     """
-    url = f"{server_url}/api/{API_VER}/sites/{site_id}/workbooks/{workbook_id}/views"
-    headers = tableau_headers(token)
-
-    r = requests.get(url, headers=headers, timeout=60)
-    r.raise_for_status()
-
-    root = ET.fromstring(r.text)
-    ns = {"t": "http://tableau.com/api"}
-
-    for v in root.findall(".//t:view", ns):
-        if v.attrib.get("name") == view_name:
-            return v.attrib["id"]
-
-    # Helpful debug: list view names if not found
-    all_views = [v.attrib.get("name", "") for v in root.findall(".//t:view", ns)]
-    raise RuntimeError(
-        f"View not found (exact name match): {view_name}\n"
-        f"Views in workbook:\n - " + "\n - ".join(all_views)
-    )
+    ws = set()
+    for w in root.findall(".//worksheet"):
+        n = (w.attrib.get("name") or "").strip()
+        if n:
+            ws.add(n)
+    return ws
 
 
-def build_vf_params(filters: dict) -> dict:
+def parse_dashboard_to_worksheets(twb_xml_bytes: bytes) -> Dict[str, List[str]]:
     """
-    Converts {"Field": ["A","B"]} -> {"vf_Field": "A,B"}
-    Tableau REST expects comma-separated values for multi-select.
+    Robust parsing strategy:
+      - Get the full set of worksheet names declared in the workbook.
+      - For each dashboard:
+          - Look at every <zone ...> and:
+              * if zone@name matches a worksheet name -> count it
+              * also check nested <view name="..."> or similar nodes where present
     """
-    vf = {}
-    for k, vals in filters.items():
-        if vals is None:
+    root = ET.fromstring(twb_xml_bytes)
+
+    worksheet_names = _collect_all_worksheet_names(root)
+    dash_map: Dict[str, Set[str]] = {}
+
+    for dash in root.findall(".//dashboard"):
+        dash_name = (dash.attrib.get("name") or "").strip()
+        if not dash_name:
             continue
-        if isinstance(vals, str):
-            vals = [vals]
-        vals = [str(x) for x in vals if str(x).strip() != ""]
-        vf[f"vf_{k}"] = ",".join(vals)
-    return vf
+
+        used: Set[str] = set()
+
+        # 1) Primary: zone name matches worksheet name
+        for zone in dash.findall(".//zone"):
+            zn = (zone.attrib.get("name") or "").strip()
+            if zn and zn in worksheet_names:
+                used.add(zn)
+
+            # 2) Fallback: sometimes worksheets are referenced via nested <view name="...">
+            # (names often equal the worksheet name)
+            for view in zone.findall(".//view"):
+                vn = (view.attrib.get("name") or "").strip()
+                if vn and vn in worksheet_names:
+                    used.add(vn)
+
+        dash_map[dash_name] = used
+
+    return {k: sorted(v) for k, v in dash_map.items()}
 
 
-def download_view_csv(server_url: str, token: str, site_id: str, view_id: str, vf_params: dict) -> str:
-    """
-    Downloads CSV from /views/{view_id}/data with vf_ params.
-    """
-    url = f"{server_url}/api/{API_VER}/sites/{site_id}/views/{view_id}/data"
-    headers = tableau_headers(token)
+def csv_escape(s: str) -> str:
+    s = "" if s is None else str(s)
+    if any(ch in s for ch in [",", '"', "\n", "\r"]):
+        s = s.replace('"', '""')
+        return f'"{s}"'
+    return s
 
-    r = requests.get(url, headers=headers, params=vf_params, timeout=120)
-    r.raise_for_status()
 
-    # Basic sanity: if Tableau returns an HTML error page, you'll often see <html
-    txt = r.text or ""
-    if "<html" in txt.lower() and "," not in txt[:2000]:
-        raise RuntimeError(
-            "Response looks like HTML (not CSV). "
-            "This usually means auth/permissions or the endpoint returned an error page."
-        )
-    return txt
+def write_csv(dash_to_sheets: Dict[str, List[str]], out_path: Path) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    lines = ["dashboard_name,worksheet_name"]
+    for dash in sorted(dash_to_sheets.keys()):
+        sheets = dash_to_sheets[dash]
+        if not sheets:
+            lines.append(f"{csv_escape(dash)},")
+        else:
+            for sh in sheets:
+                lines.append(f"{csv_escape(dash)},{csv_escape(sh)}")
+    out_path.write_text("\n".join(lines), encoding="utf-8-sig")
 
 
 def main():
-    # 1) load .env
-    load_env()
+    load_dotenv(override=True)
 
-    # 2) read creds from env
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--workbook", required=True, help="Workbook DISPLAY name (exact match)")
+    ap.add_argument("--out", default="dashboard_sheet_map.csv", help="Output CSV path")
+    args = ap.parse_args()
+
     server_url = must_env("TABLEAU_SERVER_URL").rstrip("/")
-    site = must_env("TABLEAU_SITE")  # Tableau site contentUrl ("" for Default site)
+    site = must_env("TABLEAU_SITE")  # contentUrl; "" for Default site
     token_name = must_env("TABLEAU_TOKEN_NAME")
     token_value = must_env("TABLEAU_TOKEN_VALUE")
 
-    # 3) workbook + view from CLI args (optional)
-    workbook_name = sys.argv[1] if len(sys.argv) > 1 else "Book1"
-    view_name = sys.argv[2] if len(sys.argv) > 2 else "episode_dd_across_firms (3)"
-
-    # 4) Your exact filter settings
-    filters = {
-        "Resp Age Category": ["18-24", "35-44", "65+", "45-54", "55-64", "25-34"],
-        "period": ["Q1 2026"],
-        "product_name": ["Credit Card"],
-        "txt_question_long_prefix (group)": ["Channel - Agent - Recommendations"],
-        "episode_name": ["Apply for a new credit card"],
-        "survey_provider": ["RBC"],
-        "comparison_provider": ["RBC"],
-        "brand_of_interest_para": ["RBC"],
-        "brand_of_comparison_para": ["RBC"],
-    }
-    vf_params = build_vf_params(filters)
-
     token = None
     try:
-        # 5) sign in
-        token, site_id = signin(server_url, site, token_name, token_value)
+        token, site_id = signin_pat_xml(server_url, site, token_name, token_value)
+        wb_id = find_workbook_id(server_url, token, site_id, args.workbook)
 
-        # 6) resolve workbook + view ids
-        wb_id = find_workbook_id(server_url, token, site_id, workbook_name)
-        view_id = find_view_id(server_url, token, site_id, wb_id, view_name)
+        content = download_workbook_content(server_url, token, site_id, wb_id)
+        twb_xml = extract_twb_xml(content)
 
-        print(f"Workbook: {workbook_name} -> {wb_id}")
-        print(f"View:     {view_name} -> {view_id}")
-        print("vf params:")
-        for k, v in vf_params.items():
-            print(f"  {k}={v}")
+        dash_to_sheets = parse_dashboard_to_worksheets(twb_xml)
+        write_csv(dash_to_sheets, Path(args.out))
 
-        # 7) download CSV
-        csv_text = download_view_csv(server_url, token, site_id, view_id, vf_params)
-
-        # 8) print preview + save
-        lines = csv_text.splitlines()
-        print("\n--- FIRST 50 LINES ---")
-        for i, line in enumerate(lines[:50], start=1):
-            print(f"{i:02d}: {line}")
-
-        out = "tableau_check.csv"
-        with open(out, "w", encoding="utf-8-sig", newline="") as f:
-            f.write(csv_text)
-
-        print(f"\nSaved CSV -> {out}")
-        print(f"Total lines: {len(lines)}")
+        print(f"Workbook: {args.workbook} -> {wb_id}")
+        print(f"Dashboards found: {len(dash_to_sheets)}")
+        nonempty = sum(1 for v in dash_to_sheets.values() if v)
+        print(f"Dashboards with >=1 worksheet match: {nonempty}")
+        print(f"Saved CSV -> {Path(args.out).resolve()}")
 
     finally:
         if token:
